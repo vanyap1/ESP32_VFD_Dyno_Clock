@@ -8,7 +8,7 @@
 
 ## 🎞️ Демонстрація
 
-[![VFD Clock Demo](https://img.youtube.com/vi/wnCQQ1Cxp_M/0.jpg)](https://youtu.be/wnCQQ1Cxp_M)
+[![VFD Clock Demo](images/youtube.jpg)](https://youtu.be/wnCQQ1Cxp_M)
 
 ## 📸 Фото проекту
 ![Фото годинника](images/img1.png)
