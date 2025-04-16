@@ -131,8 +131,8 @@ void ScreenHandler(void *arg){
     pinMode(LED_STRIP_PIN, OUTPUT);
     //leds[0] = CHSV(0, 0, 0);
     //leds[1] = CHSV(0, 0, 0);
-    leds[0] = CRGB(0, 0, 0);
-    leds[1] = CRGB(0, 0, 0);
+    //leds[0] = CRGB(0, 0, 0);
+    //leds[1] = CRGB(0, 0, 0);
     FastLED.show();
     
     
@@ -169,9 +169,13 @@ while(1){
     u8g2.sendBuffer();
    
     if(sysConfig.ambLightEnable){
-        leds[0] = CRGB(sysConfig.ambLightColr[0],sysConfig.ambLightColr[1],sysConfig.ambLightColr[2]);
+        for(int i = 0; i < LED_STRIP_NUM_LEDS; i++){
+            leds[i] = CRGB(sysConfig.ambLightColr[0],sysConfig.ambLightColr[1],sysConfig.ambLightColr[2]);
+        }   
     }else{
-        leds[0] = CRGB(0,0,0);
+        for(int i = 0; i < LED_STRIP_NUM_LEDS; i++){
+            leds[i] = CRGB(0,0,0);
+        }   
     }
     FastLED.show();
     //digitalWrite(Server_LED, !digitalRead(Server_LED));

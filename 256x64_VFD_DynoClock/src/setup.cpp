@@ -12,12 +12,14 @@ WiFiServer server(80);
 
 
 void saveLoginData(String ssid, String pass) {
+    ssid = ssid.substring(0, sizeof(sysSetupStruc.ssid) - 1);
+    pass = pass.substring(0, sizeof(sysSetupStruc.pass) - 1);
+
     ssid.toCharArray(sysSetupStruc.ssid, sizeof(sysSetupStruc.ssid));
     pass.toCharArray(sysSetupStruc.pass, sizeof(sysSetupStruc.pass));
-    
-    sysSetupStruc.FirstStart = 1;  
-    
-    
+
+    sysSetupStruc.FirstStart = 0;
+
     EEPROM.put(0, sysSetupStruc);
     EEPROM.commit();
 
@@ -31,17 +33,19 @@ void saveLoginData(String ssid, String pass) {
 
 
 void ClientSetup(void) {
+    esp_task_wdt_deinit();
     WiFi.mode(WIFI_AP);
     WiFi.softAP("VfdDyno");
-    esp_task_wdt_reset();
+    //esp_task_wdt_reset();
     
     EEPROM.get(0, sysSetupStruc);
 
     server.begin(); 
 
     while(true){
-
-        httpLoop(); 
+        esp_task_wdt_reset();
+        httpLoop();
+        delay(10);   
     }
 
 

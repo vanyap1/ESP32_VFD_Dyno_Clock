@@ -55,27 +55,27 @@ void setup() {
   delay(2000);
   
   Serial.begin(115200);
-  Wire.begin(SDA_PIN, SCL_PIN);
-  Serial.println("Scanning I2C bus...");
-  byte error, address;
-  int devices = 0;
+  //Wire.begin(SDA_PIN, SCL_PIN);
+  //Serial.println("Scanning I2C bus...");
+  //byte error, address;
+  //int devices = 0;
 
   Serial.println("Searching for I2C devices...");
     
-  for (address = 1; address < 127; address++) {
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
+  //for (address = 1; address < 127; address++) {
+  //  Wire.beginTransmission(address);
+  //  error = Wire.endTransmission();
 
-    if (error == 0) {
-      Serial.print("Found I2C device at 0x");
-      Serial.println(address, HEX);
-      devices++;
-    }
-  }
-  Wire.beginTransmission(0x27);
-  Wire.write(0xAA);
-  Wire.write(0xAA);
-  Wire.endTransmission();
+//    if (error == 0) {
+//      Serial.print("Found I2C device at 0x");
+//      Serial.println(address, HEX);
+//      devices++;
+//    }
+//  }
+//  Wire.beginTransmission(0x27);
+//  Wire.write(0xAA);
+//  Wire.write(0xAA);
+//  Wire.endTransmission();
 
   ScreenTaskCreate();
 
@@ -86,16 +86,15 @@ void setup() {
   if(digitalRead(userBtn) == 0 ) { // Checking if is it a first start or manual reset request
     for(int i = 0; i < 20; i++) sysSetupStruc.ssid[i] = 0;
     for(int i = 0; i < 20; i++) sysSetupStruc.pass[i] = 0;
-    sysSetupStruc.FirstStart = 0;   
+    sysSetupStruc.FirstStart = 10;   
     EEPROM.put(0, sysSetupStruc);             
     EEPROM.commit();   
   }
-  timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
-  configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+  
 
   Serial.println(sysSetupStruc.FirstStart);
   
-  if (sysSetupStruc.FirstStart == 0){
+  if (sysSetupStruc.FirstStart != 0){
     
     pullMsg(1, "* Config mode  *", 0);
     pullMsg(1, " IP:192.168.4.1 ", 1); //Lock config screen in config mode
@@ -133,7 +132,8 @@ void setup() {
    
       Serial.println(WiFi.localIP());
     }
-
+    timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
+    configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
     delay(2000);
     //pullMsg(0, "", 0);
     

@@ -6,8 +6,8 @@ extern const char* ntpServers[];
 typedef struct{
   uint8_t FirstStart;
   bool NodeWasUpdated; 
-  char ssid[20];
-  char pass[20];
+  char ssid[32];
+  char pass[64];
   uint8_t ambLightBrightness;
   uint8_t ambLightEnable;
   uint8_t ambLightColr[3];

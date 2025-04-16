@@ -27,9 +27,10 @@
 
     #define Wifi_LED 14
     #define Server_LED 12
-    #define LED_STRIP_PIN 13
-    #define LED_STRIP_NUM_LEDS 5
-    #define GRB_LED_TYPE
+    #define LED_STRIP_PIN 14
+    #define LED_STRIP_NUM_LEDS 9
+    //#define GRB_LED_TYPE
+    #define RGB_LED_TYPE
 #endif
 
 #if defined(SMALL_ESP32_MODULE_v1)
