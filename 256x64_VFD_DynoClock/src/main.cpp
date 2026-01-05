@@ -92,8 +92,9 @@ void setup() {
   }
   
 
-  Serial.println(sysSetupStruc.FirstStart);
   
+  Serial.println("First start: " + String(sysSetupStruc.FirstStart));
+    
   if (sysSetupStruc.FirstStart != 0){
     
     pullMsg(1, "* Config mode  *", 0);
@@ -119,6 +120,7 @@ void setup() {
       }
     }
     Serial.println("");
+    
 
     if(WiFi.status() == WL_CONNECTED){
       sysStatus = "Connected";

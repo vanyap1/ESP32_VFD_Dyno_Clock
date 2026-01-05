@@ -1,0 +1,301 @@
+#include "pt63xx.h"
+#include "SPI.h"
+
+
+
+uint8_t vfd_buff[36];
+uint8_t specialCharData = 0;
+
+uint8_t IVL2_7_characters[] = {
+  0x00, // Space
+  0xC0, // !
+  0xC0, // "
+  0x00, // #
+  0x00, // $
+  0x00, // %
+  0x00, // &
+  0xC0, // '
+  0x00, // (
+  0x00, // )
+  0x00, // *
+  0x00, // +
+  0x80, // ,
+  0x40, // -
+  0x80, // .
+  0x00, // Slash
+  0x3F, // 0
+  0x06, // 1
+  0x5B, // 2
+  0x4F, // 3
+  0x66, // 4
+  0x6D, // 5
+  0x7D, // 6
+  0x07, // 7
+  0x7F, // 8
+  0x6F, // 9
+  0xC0, // :
+  0xC0, // ;
+  0x00, // <
+  0x00, // =
+  0x00, // >  
+  0x00, // ?
+  0x77, // A
+  0x7C, // B
+  0x39, // C
+  0x5E, // D
+  0x79, // E
+  0x71, // F
+  0x00, // G
+  0x00, // H
+  0x24, // I
+  0x0F, // J
+  0x00, // K
+  0x2B, // L
+  0x00, // M
+  0x00, // N
+  0xAF, // O
+  0x97, // P
+  0x00, // Q
+  0x00, // R
+  0xBA, // S
+  0x00, // T
+  0x2F, // U
+  0x00, // V
+  0x00, // W
+  0x00, // X
+  0x00, // Y
+  0x97  // Z
+  
+};
+
+uint8_t IV18_characters[] = {
+  0x00, // Space
+  0x04, // !
+  0x22, // "
+  0x00, // #
+  0x00, // $
+  0x00, // %
+  0x00, // &
+  0x02, // '
+  0x00, // (
+  0x00, // )
+  0x00, // *
+  0x00, // +
+  0x40, // ,
+  0x10, // -
+  0x40, // .
+  0x00, // Slash
+  0xaf, // 0
+  0x24, // 1
+  0x97, // 2
+  0xB6, // 3
+  0x3C, // 4
+  0xBA, // 5
+  0xBB, // 6
+  0xA4, // 7
+  0xBF, // 8
+  0xBE, // 9
+  0x00, // :
+  0x00, // ;
+  0x00, // <
+  0x00, // =
+  0x00, // >  
+  0x00, // ?
+  0xBD, // A
+  0x3B, // B
+  0x8B, // C
+  0x37, // D
+  0x9B, // E
+  0x99, // F
+  0x00, // G
+  0x00, // H
+  0x24, // I
+  0x0F, // J
+  0x00, // K
+  0x2B, // L
+  0x00, // M
+  0x00, // N
+  0xAF, // O
+  0x97, // P
+  0x00, // Q
+  0x00, // R
+  0xBA, // S
+  0x00, // T
+  0x2F, // U
+  0x00, // V
+  0x00, // W
+  0x00, // X
+  0x00, // Y
+  0x97  // Z
+  
+};
+
+
+PT63XX::PT63XX(int latchPin, SCREEN_TYPE type)
+  : _latchPin(latchPin), _screenType(type) {
+  
+  }
+
+
+
+//Usage example
+void screen_init() {
+  PT63XX vfd(27); // CS pin must be defined
+  vfd.begin();
+  vfd.clearDisplay();
+}
+
+
+
+void PT63XX::begin() {
+    pinMode(_latchPin, OUTPUT);
+    // SCK=5, MISO=18, MOSI=19, SS=-1 (не використовується)
+    SPI.begin(5, 18, 19, -1);
+
+    SPI.setBitOrder(LSBFIRST);
+    SPI.setDataMode(SPI_MODE0);
+    SPI.setClockDivider(SPI_CLOCK_DIV8);
+    memset(vfd_buff, 0, sizeof(vfd_buff));
+    delay(200);
+
+    sendCommand(COMMAND_4 | DISPLAY_OFF); // Display OFF
+    delay(10);
+
+    sendCommand(COMMAND_2 | NORMAL_OPERATION_MODE | INCREMENT_ADDRESS | WRITE_DATA_TO_DISPLAY_MODE); // Command 2 (Normal operation, Increment address, Write data to display)
+    delay(10);
+    //Command 3: The same functionnal.
+    clearDisplay();
+    switch (_screenType)
+    {
+    case IV18:
+      sendCommand(COMMAND_1 | DIG9_SEG19); //Display mode set
+      break;
+    case IVL2_7:
+      sendCommand(COMMAND_1 | DIG5_SEG23);
+      break;
+
+    default:
+      sendCommand(COMMAND_1 | DIG9_SEG19); 
+      break;
+    }
+    
+    
+    delay(10);
+
+    sendCommand(COMMAND_4 | DISPLAY_ON | INIT_BRIGHTNESS); // Command 4 (Display ON)
+    setBrightness(MAX_BRIGHTNESS);  
+}
+
+
+void PT63XX::clearDisplay() {
+  sendCommand(0x40);
+  memset(vfd_buff, 0, sizeof(vfd_buff));
+    vfd_buff[0] = COMMAND_3; // Start address
+    sendData(vfd_buff, sizeof(vfd_buff)); // Clear display
+}
+
+void PT63XX::setBrightness(uint8_t brightness) {
+  if (brightness > MAX_BRIGHTNESS) {
+    brightness = MAX_BRIGHTNESS;
+  }
+  sendCommand(0x88 | brightness); // Set brightness command
+}
+
+void PT63XX::displayOff() {
+  sendCommand(COMMAND_4 | DISPLAY_OFF); // Display OFF
+}
+void PT63XX::displayOn() {
+  sendCommand(COMMAND_4 | DISPLAY_ON | INIT_BRIGHTNESS); // Display ON
+}
+
+//write char to VFD
+void PT63XX::writeChar(uint8_t position, uint8_t character) {
+  if (position >= 12) {
+    return; // Invalid position
+  }
+  vfd_buff[0] = COMMAND_3 + (position*3); // Set address
+  vfd_buff[1] = character; // Character data
+  sendData(&vfd_buff[0], 2); // Send command and data
+}
+
+void PT63XX::writeString(const char* str, uint8_t position) {
+  uint8_t currentPos = position;
+  uint8_t lastCharData = 0;
+  bool hasLastChar = false;
+  if(_screenType == IV18){
+    currentPos++; // Shift for IV18
+  }
+
+
+  while (*str && currentPos < 32) {
+    uint8_t charCode = *str;
+    switch (_screenType)
+    {
+    case IV18:
+     
+      charCode = (charCode == ':') ? '-' : charCode; // Замінюємо ':' на '-'
+      if(charCode == '.' || charCode == ',') {
+        if (hasLastChar) {
+          // Додаємо крапку до попереднього символа
+          writeChar(currentPos - 1, lastCharData | 0x40);
+          } else {
+          // Якщо це перший символ або рядок лише з крапок - виводимо саму крапку
+          lastCharData = 0x40;
+          writeChar(currentPos, lastCharData);
+          hasLastChar = true;
+          currentPos++;
+        }
+        str++;
+        continue;
+      }
+      lastCharData = IV18_characters[charCode - 32];
+      break;
+    case IVL2_7:
+      //lastCharData = IVL2_7_characters[charCode - 32];
+      lastCharData =IVL2_7_characters[charCode - 32];
+      // bits 6, 7 - dots between hours/minutes in grid 2
+      writeChar(currentPos, lastCharData); // Always turn on dots at position 4
+      break;
+    
+    default:
+      lastCharData = IV18_characters[charCode - 32];
+      break;
+    }
+    writeChar(currentPos, lastCharData);
+    hasLastChar = true;
+    str++;
+    currentPos++;
+  }
+}
+
+void PT63XX::writeSpecialCharPlase(IV18_SPECIAL_CHARS charName, bool state){
+  if(_screenType == IV18){
+
+    if(state){
+      specialCharData |= charName;
+    } else {
+      specialCharData &= ~charName;
+    }
+    writeChar(0, specialCharData);
+  }
+}
+void PT63XX::sendCommand(uint8_t command) {
+  digitalWrite(_latchPin, LOW);
+  vfd_buff[0] = command;
+  SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE0));
+  SPI.transferBytes(vfd_buff, nullptr, 1);
+  SPI.endTransaction();
+  delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
+  digitalWrite(_latchPin, HIGH);
+}
+void PT63XX::sendData(uint8_t *data, size_t length) {
+  digitalWrite(_latchPin, LOW);
+  memcpy(vfd_buff, data, length);
+  SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE0));
+  SPI.transferBytes(vfd_buff, nullptr, length);
+  SPI.endTransaction();
+  delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
+  digitalWrite(_latchPin, HIGH);
+}
+
+

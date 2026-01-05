@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<!-- saved from url=(0038)https://williamchange.github.io/xvisd/ -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <style>
+        body {background-color: black;}
+        .result {
+            color: #09ff00;
+            font-size: 25px;
+            font-family: Arial, Helvetica, sans-serif;
+        }
+    </style>
+    
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>16seg to hex</title>
+    <script>
+        arr = [0,0,0,0,0,0,0,0]
+
+        function gethex() {
+            hex = "0x"+parseInt(arr.join(""), 2).toString(16).toUpperCase().padStart(2, '0');
+            document.getElementById("display").innerHTML=hex
+            document.getElementById("dec").innerHTML=parseInt(arr.join(""), 2).toString(10)
+            document.getElementById("bin").innerHTML=arr.join("").match(/.{1,4}/g).join(" ")
+            
+           
+            document.getElementById("ASbin").innerHTML = "{0b"+arr.slice(0, 8).join("")+ "},";
+            document.getElementById("AShex").innerHTML = "{0x"+parseInt(arr.join("").slice(0, 8), 2).toString(16) + "},";
+            
+
+        }
+
+        function s(el,id) {
+            arr[id-1] = + !arr[id-1]
+            el.setAttribute("fill",arr[id-1] == 1 ? "white":"#3D3D3D")
+            gethex()
+        }
+
+    </script>
+</head>
+<body data-new-gr-c-s-check-loaded="14.1176.0" data-gr-ext-installed="">
+    <div class="result">
+        <div id="display">0x00</div>
+        <div id="dec">0</div>
+        <div id="bin">0000 0000</div>
+        <div id="ASbin">{вв0b00000000},</div>
+        <div id="AShex">{0x00},</div>
+    </div>
+    <!--?xml version="1.0" encoding="UTF-8"?-->
+    <svg width="608px" height="559px" viewBox="0 0 1216 1119" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+        <title>xvisd</title>
+        <g id="xvisd" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+            
+            <polygon id="0" onclick="s(this,1)" fill="#3D3D3D" points="845.481445 88.6474609 880.673828 123.547852 845.481445 158.540039 646.317383 158.540039 610.5 123.59375 646.317383 88.6474609"></polygon>
+            <text x="745.586274" y="123.59375" text-anchor="middle" fill="green" font-size="20">A</text>
+            
+            <polygon id="1" onclick="s(this,6)" fill="#3D3D3D" points="883.121094 125.294922 849.228516 159.235352 849.228516 524.225586 883.121094 559.959961 918.039062 524.225586 918.039062 159.235352"></polygon>
+            <text x="883.121094" y="342.627529" text-anchor="middle" fill="green" font-size="20">B</text>
+            
+            <polygon id="2" onclick="s(this,3)" fill="#3D3D3D" points="883.121094 560.294922 849.228516 594.235352 849.228516 959.225586 883.121094 994.959961 918.039062 959.225586 918.039062 594.235352"></polygon>
+            <text x="883.121094" y="777.127954" text-anchor="middle" fill="green" font-size="20">C</text>
+            
+            <polygon id="3" onclick="s(this,7)" fill="#3D3D3D" points="845.481445 962.647461 880.673828 997.547852 845.481445 1032.54004 646.317383 1032.54004 610.5 997.59375 646.317383 962.647461"></polygon>
+            <text x="745.586274" y="997.59375" text-anchor="middle" fill="green" font-size="20">D</text>
+            
+            <polygon id="4" onclick="s(this,8)" fill="#3D3D3D" points="608.121094 560.294922 574.228516 594.235352 574.228516 959.225586 608.121094 994.959961 643.039062 959.225586 643.039062 594.235352"></polygon>
+            <text x="608.121094" y="777.127954" text-anchor="middle" fill="green" font-size="20">E</text>
+            
+            <polygon id="5" onclick="s(this,5)" fill="#3D3D3D" points="608.121094 125.294922 574.228516 159.235352 574.228516 524.225586 608.121094 559.959961 643.039062 524.225586 643.039062 159.235352"></polygon>
+            <text x="608.121094" y="342.627529" text-anchor="middle" fill="green" font-size="20">F</text>
+
+            <polygon id="6" onclick="s(this,4)" fill="#3D3D3D" points="845.481445 524.647461 880.673828 559.547852 845.481445 594.540039 646.317383 594.540039 610.5 559.59375 646.317383 524.647461"></polygon>
+            <text x="745.586274" y="559.59375" text-anchor="middle" fill="green" font-size="20">G</text>
+            
+            <ellipse id="7" onclick="s(this,2)" cx="979" cy="976" fill="#3f3f3f" id="svg_19" rx="31" ry="30" stroke="#000000" stroke-width="5"/>
+            <text x="979" y="976" text-anchor="middle" fill="green" font-size="20">db</text>
+            
+        </g>
+    </svg>
+
+
+
+</body><grammarly-desktop-integration data-grammarly-shadow-root="true"><template shadowrootmode="open"><style>
+      div.grammarly-desktop-integration {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+        -moz-user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select:none;
+        user-select:none;
+      }
+
+      div.grammarly-desktop-integration:before {
+        content: attr(data-content);
+      }
+    </style><div aria-label="grammarly-integration" role="group" tabindex="-1" class="grammarly-desktop-integration" data-content="{&quot;mode&quot;:&quot;full&quot;,&quot;isActive&quot;:true,&quot;isUserDisabled&quot;:false}"></div></template></grammarly-desktop-integration></html>
