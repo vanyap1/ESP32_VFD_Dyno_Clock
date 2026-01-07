@@ -13,6 +13,8 @@
 
 #define LED_HTTP 16
 #define LED_WIFI 17
+#define INV_ENABLE 21
+
 #define USR_BTN 4
 
 #define VFD_EN
@@ -41,6 +43,8 @@ void setup()
 {
   pinMode(LED_HTTP, OUTPUT);
   pinMode(LED_WIFI, OUTPUT);
+  pinMode(INV_ENABLE, OUTPUT);
+  digitalWrite(INV_ENABLE, HIGH); // Enable inverter power
   pinMode(USR_BTN, INPUT_PULLUP);
 
   sysSetupStruc.ntpServerIndex = 0;
