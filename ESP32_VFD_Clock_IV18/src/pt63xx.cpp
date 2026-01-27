@@ -5,6 +5,7 @@
 
 uint8_t vfd_buff[36];
 uint8_t specialCharData = 0;
+uint32_t customCharData[96] = {0};
 
 uint8_t IVL2_7_characters[] = {
   0x00, // Space
@@ -133,7 +134,8 @@ uint8_t IV18_characters[] = {
 
 PT63XX::PT63XX(int latchPin, SCREEN_TYPE type)
   : _latchPin(latchPin), _screenType(type) {
-  
+    digitalWrite(_latchPin, HIGH);
+    pinMode(_latchPin, OUTPUT);
   }
 
 
@@ -148,13 +150,11 @@ void screen_init() {
 
 
 void PT63XX::begin() {
+    digitalWrite(_latchPin, HIGH);
     pinMode(_latchPin, OUTPUT);
     // SCK=5, MISO=18, MOSI=19, SS=-1 (не використовується)
     SPI.begin(5, 18, 19, -1);
-
-    SPI.setBitOrder(LSBFIRST);
-    SPI.setDataMode(SPI_MODE0);
-    SPI.setClockDivider(SPI_CLOCK_DIV8);
+    // Налаштування SPI (LSBFIRST, MODE0, частота) встановлюються через beginTransaction()
     memset(vfd_buff, 0, sizeof(vfd_buff));
     delay(200);
 
@@ -217,6 +217,59 @@ void PT63XX::writeChar(uint8_t position, uint8_t character) {
   vfd_buff[1] = character; // Character data
   sendData(&vfd_buff[0], 2); // Send command and data
 }
+void PT63XX::writeRawData(uint8_t position, uint32_t data){
+  if (position >= 12) {
+    return; // Invalid position
+  }
+  vfd_buff[0] = COMMAND_3 + (position*3); // Set address
+  vfd_buff[1] = data & 0xFF; // Lower byte
+  vfd_buff[2] = (data >> 8) & 0xFF; // Middle byte
+  vfd_buff[3] = (data >> 16) & 0xFF; // Upper byte
+  sendData(&vfd_buff[0], 4); // Send command and data
+}
+
+void PT63XX::writeStringUniverslaChrTab(const char* str, uint8_t position){
+ uint8_t charsToWrite = strlen(str);
+ uint8_t currentPos = position;
+ uint32_t lastCharData = 0;
+ bool hasLastChar = false;
+ 
+ for(uint8_t i = 0; i < charsToWrite; i++){
+   if(currentPos >= 16) break; // Prevent overflow
+   uint8_t charCode = str[i];
+   
+   // Обробка коми та крапки - додати до попереднього символу
+   if(charCode == '.' || charCode == ',' || charCode == ':') {
+     if (hasLastChar) {
+       // Взяти значення коми з таблиці та об'єднати з попереднім символом
+       uint32_t dotSegments = customCharData[charCode - 32];
+       lastCharData = lastCharData | dotSegments;
+       writeRawData(currentPos-1, lastCharData);
+     } else {
+       // Якщо це перший символ - виводимо саму кому
+       lastCharData = customCharData[charCode - 32];
+       writeRawData(currentPos, lastCharData);
+       hasLastChar = true;
+       currentPos++;
+     }
+     continue;
+   }
+   
+   lastCharData = customCharData[charCode - 32];
+   writeRawData(currentPos, lastCharData);
+   hasLastChar = true;
+   currentPos++;
+ }
+}
+
+void PT63XX::setCharToCustomTable(uint8_t index, uint32_t segments){
+  if(index < 96+32){
+    customCharData[index-32] = segments;
+    
+    
+  }
+}
+
 
 void PT63XX::writeString(const char* str, uint8_t position) {
   uint8_t currentPos = position;
@@ -236,10 +289,8 @@ void PT63XX::writeString(const char* str, uint8_t position) {
       charCode = (charCode == ':') ? '-' : charCode; // Замінюємо ':' на '-'
       if(charCode == '.' || charCode == ',') {
         if (hasLastChar) {
-          // Додаємо крапку до попереднього символа
           writeChar(currentPos - 1, lastCharData | 0x40);
           } else {
-          // Якщо це перший символ або рядок лише з крапок - виводимо саму крапку
           lastCharData = 0x40;
           writeChar(currentPos, lastCharData);
           hasLastChar = true;
@@ -281,8 +332,9 @@ void PT63XX::writeSpecialCharPlase(IV18_SPECIAL_CHARS charName, bool state){
 }
 void PT63XX::sendCommand(uint8_t command) {
   digitalWrite(_latchPin, LOW);
+  delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
   vfd_buff[0] = command;
-  SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE3));
   SPI.transferBytes(vfd_buff, nullptr, 1);
   SPI.endTransaction();
   delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
@@ -290,9 +342,10 @@ void PT63XX::sendCommand(uint8_t command) {
 }
 void PT63XX::sendData(uint8_t *data, size_t length) {
   digitalWrite(_latchPin, LOW);
-  memcpy(vfd_buff, data, length);
-  SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE0));
-  SPI.transferBytes(vfd_buff, nullptr, length);
+  delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
+  //memcpy(vfd_buff, data, length);
+  SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE3));
+  SPI.transferBytes(data, nullptr, length);
   SPI.endTransaction();
   delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
   digitalWrite(_latchPin, HIGH);

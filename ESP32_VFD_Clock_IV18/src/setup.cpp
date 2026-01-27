@@ -2,13 +2,14 @@
 #include <Arduino.h>
 #include "setup.h"
 #include <EEPROM.h>
-#include <esp_task_wdt.h>
 #include <WiFi.h>
+#include <DNSServer.h>
 #include "dto.h"
-#include <html_page.h>
+#include "WebRoot/html_page.h"
 
 
-WiFiServer server(80);  
+WiFiServer server(80);
+DNSServer dnsServer;  
 
 
 void saveLoginData(String ssid, String pass) {
@@ -34,16 +35,14 @@ void saveLoginData(String ssid, String pass) {
 
 
 void ClientSetup(void) {
-    esp_task_wdt_deinit();
-    
-    // Спочатку скануємо мережі в STA режимі
-    WiFi.mode(WIFI_STA);
+    WiFi.mode(WIFI_OFF); 
+    delay(100);
+    WiFi.mode(WIFI_AP_STA);
     Serial.println("Scanning WiFi networks...");
     int n = WiFi.scanNetworks();
     Serial.print("Networks found: ");
     Serial.println(n);
     
-    // Формуємо список опцій для HTML
     String options = "";
     for (int i = 0; i < n; ++i) {
         options += "<option value=\"";
@@ -61,22 +60,27 @@ void ClientSetup(void) {
         Serial.println(" dBm)");
     }
     
-    // Тепер переходимо в AP режим
+    
     Serial.println("Starting AP mode...");
     Serial.print("AP SSID: ");
     Serial.println(FIRST_SETUP_AP_NAME);
 
+    WiFi.mode(WIFI_OFF); 
+    delay(100);
     WiFi.mode(WIFI_AP);
     WiFi.softAP(FIRST_SETUP_AP_NAME, NULL, 3);
     
     EEPROM.get(0, sysSetupStruc);
-
-    server.begin(); 
+    server.begin();
+    dnsServer.start(53, "*", WiFi.softAPIP());
+    Serial.println("DNS server started");
+    Serial.print("AP IP: ");
+    Serial.println(WiFi.softAPIP());
 
     while(true){
-        esp_task_wdt_reset();
-        httpLoop(options);  // Передаємо готовий список
-        delay(10);   
+        dnsServer.processNextRequest(); 
+        httpLoop(options); 
+        yield();  
     }
 }
 
@@ -93,21 +97,95 @@ void httpLoop(String options) {
                 char c = client.read();
                 Serial.write(c);
                 header += c;
-
                 if (c == '\n') {
                     if (currentLine.length() == 0) {
+                        if (header.indexOf("GET /submit") >= 0) {
+                            Serial.println("Submit request detected!");
+                            int ssidIndex = header.indexOf("ssid=") + 5;
+                            int passIndex = header.indexOf("pass=") + 5;
+
+                            if (ssidIndex > 5 && passIndex > 5) {
+                                String ssid = header.substring(ssidIndex, header.indexOf('&', ssidIndex));
+                                String pass = header.substring(passIndex, header.indexOf(' ', passIndex));
+                                
+                                ssid.replace("+", " ");
+                                pass.replace("+", " ");
+
+                                Serial.print("SSID: ");
+                                Serial.println(ssid);
+
+                                client.println("HTTP/1.1 200 OK");
+                                client.println("Content-type:text/html; charset=utf-8");
+                                client.println("Connection: close");
+                                client.println();
+                                client.println("<html><body><h1>Connecting...</h1><p>Device is restarting</p></body></html>");
+                                
+                                delay(100);
+                                client.stop();
+                                
+                                saveLoginData(ssid, pass);
+                                return;
+                            }
+                        }
+                        
+                        
+                        bool isCaptivePortalCheck = false;
+                        
+                      
+                        if (header.indexOf("GET /generate_204") >= 0 ||
+                            header.indexOf("GET /gen_204") >= 0 ||
+                            header.indexOf("connectivitycheck") >= 0) {
+                            isCaptivePortalCheck = true;
+                        }
+                       
+                        else if (header.indexOf("GET /hotspot-detect.html") >= 0 ||
+                                 header.indexOf("captive.apple.com") >= 0) {
+                            isCaptivePortalCheck = true;
+                        }
+                
+                        else if (header.indexOf("GET /ncsi.txt") >= 0 ||
+                                 header.indexOf("GET /connecttest.txt") >= 0) {
+                            isCaptivePortalCheck = true;
+                        }
+                        
+                        if (isCaptivePortalCheck) {
+                            Serial.println("Captive portal detection request - redirecting");
+                            
+                            client.println("HTTP/1.1 302 Found");
+                            client.println("Location: http://192.168.4.1/");
+                            client.println("Cache-Control: no-cache");
+                            client.println("Connection: close");
+                            client.println();
+                            break;
+                        }
+                        
+                        // Для всіх інших запитів - показати сторінку налаштування
+                        Serial.println("Sending config page...");
                         client.println("HTTP/1.1 200 OK");
-                        client.println("Content-type:text/html");
+                        client.println("Content-type:text/html; charset=utf-8");
+                        client.println("Cache-Control: no-cache, no-store, must-revalidate");
+                        client.println("Pragma: no-cache");
+                        client.println("Expires: 0");
                         client.println("Connection: close");
                         client.println();
 
-                        // Замінюємо %OPTIONS% у HTML-коді на список мереж
+                        // Замінюємо %OPTIONS% на список мереж
                         String page = apConfig;
                         page.replace("%OPTIONS%", options);
 
-                        // Відправляємо сторінку клієнту
-                        client.println(page);
-
+                        // Відправляємо порціями для великих файлів
+                        const char* ptr = page.c_str();
+                        size_t len = page.length();
+                        const size_t chunkSize = 512;
+                        while (len > 0 && client.connected()) {
+                            size_t toSend = (len > chunkSize) ? chunkSize : len;
+                            client.write((const uint8_t*)ptr, toSend);
+                            ptr += toSend;
+                            len -= toSend;
+                            delay(1);
+                        }
+                        
+                        Serial.println("Page sent.");
                         break;
                     } else {
                         currentLine = "";
@@ -118,15 +196,7 @@ void httpLoop(String options) {
             }
         }
 
-        if (header.indexOf("GET /submit") >= 0) {
-            int ssidIndex = header.indexOf("ssid=") + 5;
-            int passIndex = header.indexOf("pass=") + 5;
-
-            String ssid = header.substring(ssidIndex, header.indexOf('&', ssidIndex));
-            String pass = header.substring(passIndex, header.indexOf(' ', passIndex));
-
-            saveLoginData(ssid, pass);
-        }
+        delay(10);
         client.stop();
         Serial.println("Client Disconnected.");
     }

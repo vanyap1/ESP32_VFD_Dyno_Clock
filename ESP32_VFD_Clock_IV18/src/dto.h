@@ -21,6 +21,7 @@ typedef struct{
   uint8_t ntpTimeZone;
   uint8_t screenType;
   uint8_t screenDemoMode;
+  uint32_t customCharData[96];
 }SystemSetup;
 
 

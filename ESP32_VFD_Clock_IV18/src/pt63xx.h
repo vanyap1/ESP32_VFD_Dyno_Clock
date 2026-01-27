@@ -6,8 +6,8 @@
 
 
   
-#define IV18_VFD_LATCH_DELAY_US 25
-#define IV18_VFD_SPI_SPEED 5000000
+#define IV18_VFD_LATCH_DELAY_US 250
+#define IV18_VFD_SPI_SPEED 500000  // 500 kHz
 
 #define MAX_BRIGHTNESS 7
 #define INIT_BRIGHTNESS 1
@@ -50,6 +50,8 @@ enum IV18_SPECIAL_CHARS {
   IV18_CHAR_MINUS = 0x10,
 };
 
+extern uint32_t customCharData[96];
+
 class PT63XX {
 
   public:
@@ -63,6 +65,9 @@ class PT63XX {
     void displayOn();
     void clearDisplay();
     void writeChar(uint8_t position, uint8_t character);
+    void writeRawData(uint8_t position, uint32_t data);
+    void writeStringUniverslaChrTab(const char* str, uint8_t position);
+    void setCharToCustomTable(uint8_t index, uint32_t segments);
     void writeString(const char* str, uint8_t position);
     void writeSpecialCharPlase(IV18_SPECIAL_CHARS charName, bool state);
   private:
