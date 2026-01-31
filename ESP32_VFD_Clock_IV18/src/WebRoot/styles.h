@@ -754,4 +754,266 @@ details[open] summary {
     grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
     gap: 20px;
 }
+
+/* System Setup Styles */
+.setup-group {
+  background: #1e1e1e;
+  border-radius: 8px;
+  border: 1px solid #404040;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.setup-heading {
+  color: #00bcd4;
+  font-size: 1.2em;
+  margin: 0 0 15px 0;
+  padding-bottom: 10px;
+  border-bottom: 2px solid #404040;
+}
+
+.setup-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+  gap: 15px;
+  flex-wrap: wrap;
+}
+
+.setup-label {
+  min-width: 180px;
+  color: #aaa;
+  font-weight: 500;
+}
+
+.setup-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  flex-wrap: wrap;
+}
+
+.datetime-input {
+  background: #252525;
+  color: #e0e0e0;
+  border: 2px solid #404040;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.datetime-input:focus {
+  border-color: #00bcd4;
+}
+
+.text-input {
+  background: #252525;
+  color: #e0e0e0;
+  border: 2px solid #404040;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 300px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.text-input:focus {
+  border-color: #00bcd4;
+}
+
+.number-input {
+  background: #252525;
+  color: #e0e0e0;
+  border: 2px solid #404040;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 80px;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.number-input:focus {
+  border-color: #00bcd4;
+}
+
+.select-input {
+  background: #252525;
+  color: #e0e0e0;
+  border: 2px solid #404040;
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 14px;
+  width: 300px;
+  outline: none;
+  cursor: pointer;
+  transition: border-color 0.3s;
+}
+
+.select-input:focus {
+  border-color: #00bcd4;
+}
+
+.checkbox-input {
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+  accent-color: #00bcd4;
+}
+
+.checkbox-label {
+  color: #aaa;
+  margin-left: 5px;
+  font-size: 14px;
+}
+
+.set-button {
+  background: #00bcd4;
+  color: #000;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 20px;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.3s;
+  text-transform: uppercase;
+}
+
+.set-button:hover {
+  background: #00acc1;
+  box-shadow: 0 4px 12px rgba(0, 188, 212, 0.4);
+}
+
+.set-button:active {
+  transform: scale(0.98);
+}
+
+.slider-input {
+  flex: 1;
+  min-width: 150px;
+  height: 6px;
+  background: #404040;
+  border-radius: 3px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.slider-input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  background: #00bcd4;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.slider-input::-webkit-slider-thumb:hover {
+  background: #00acc1;
+  box-shadow: 0 0 10px rgba(0, 188, 212, 0.6);
+}
+
+.slider-input::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  background: #00bcd4;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.slider-input::-moz-range-thumb:hover {
+  background: #00acc1;
+  box-shadow: 0 0 10px rgba(0, 188, 212, 0.6);
+}
+
+.slider-value {
+  min-width: 45px;
+  color: #00bcd4;
+  font-weight: bold;
+  font-size: 16px;
+  text-align: center;
+}
+
+.color-input {
+  width: 60px;
+  height: 40px;
+  border: 2px solid #404040;
+  border-radius: 6px;
+  cursor: pointer;
+  background: #252525;
+  outline: none;
+  transition: border-color 0.3s;
+}
+
+.color-input:focus {
+  border-color: #00bcd4;
+}
+
+.variable-hint {
+  color: #888;
+  font-size: 12px;
+  font-style: italic;
+  margin-left: 10px;
+}
+
+.sensor-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 15px;
+}
+
+.sensor-table tr {
+  border-bottom: 1px solid #404040;
+}
+
+.sensor-table tr:last-child {
+  border-bottom: none;
+}
+
+.sensor-control {
+  padding: 10px 15px 10px 0;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+.sensor-control .setup-label {
+  margin-left: 10px;
+  cursor: pointer;
+}
+
+.sensor-description {
+  padding: 10px 0;
+  vertical-align: top;
+  width: 100%;
+}
+
+.sensor-description .variable-hint {
+  display: block;
+  margin-left: 0;
+  line-height: 1.6;
+}
+
+@media (max-width: 768px) {
+  .setup-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .setup-label {
+    min-width: 100%;
+  }
+  
+  .setup-controls {
+    width: 100%;
+  }
+}
 )rawliteral";

@@ -22,6 +22,7 @@ typedef struct{
   uint8_t screenType;
   uint8_t screenDemoMode;
   uint32_t customCharData[96];
+  uint8_t segmentsBitMask[96];
 }SystemSetup;
 
 

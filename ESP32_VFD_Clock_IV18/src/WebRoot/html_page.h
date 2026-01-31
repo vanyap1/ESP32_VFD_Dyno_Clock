@@ -46,7 +46,7 @@ const char charGen[] = R"rawliteral(
     <div class="top-control-bar">
       <div class="nav-menu">
         <a href="/" class="nav-button">MainPage</a>
-        <a href="/segConstr" class="nav-button">Seg Contructor</a>
+        <a href="/chargen" class="nav-button active">Seg Contructor</a>
 
       </div>
       
@@ -225,12 +225,133 @@ const char charGen[] = R"rawliteral(
       </div>
       <div style="margin-top: 15px; text-align: center;">
         <button id="sendCharset" style="background: #09ff00; color: black; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; font-weight: bold;">
-          Send CHARSET Command
+          Save Character to Device
         </button>
+        <button id="saveSegmentsMap" style="background: #0099ff; color: black; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; font-weight: bold; margin-left: 10px;">
+          Save SegmentsMap
+        </button>
+        <button id="dumpCharTab" style="background: #ff9900; color: black; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; font-weight: bold; margin-left: 10px;">
+          DumpCharTab
+        </button>
+        <button id="loadCharTab" style="background: #9900ff; color: black; border: none; padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; font-weight: bold; margin-left: 10px;">
+          LoadCharTab
+        </button>
+        <input type="file" id="fileInput" accept=".bin" style="display: none;">
         <div id="commandStatus" style="margin-top: 10px; color: #09ff00; font-size: 14px;"></div>
       </div>
     </div>
 
+    <div class="terminal-section">
+      <div class="label" style="color: #ff6600;">⚠️ FIRMWARE UPDATE</div>
+      <div style="text-align: center; padding: 20px;">
+        <p style="color: #ff9900; margin-bottom: 15px;">Upload new firmware (.bin file) to update ESP32 controller</p>
+        <button id="loadFirmware" style="background: #ff3300; color: white; border: none; padding: 12px 30px; font-size: 18px; cursor: pointer; border-radius: 5px; font-weight: bold;">
+          📤 Load Firmware
+        </button>
+        <input type="file" id="firmwareInput" accept=".bin" style="display: none;">
+        <div id="firmwareStatus" style="margin-top: 15px; color: #09ff00; font-size: 14px;"></div>
+        <div style="margin-top: 10px; color: #888; font-size: 12px;">⚠️ Device will restart after successful update</div>
+      </div>
+    </div>
+
+    <div class="info-section">
+      <div class="label">Commands examples</div>
+      <table class="command-table">
+        <tr>
+          <th>Command</th>
+          <th>Description</th>
+          <th>Example</th>
+          <th>Response</th>
+        </tr>
+        <tr>
+          <td>CHARSET,... <span class="copy-icon" onclick="copyToInput('CHARSET,0,41,0F3F00')" title="Copy to input">📋</span></td>
+          <td>Save character to device</td>
+          <td>CHARSET,0,41,0F3F00</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>CHARTEST,... <span class="copy-icon" onclick="copyToInput('CHARTEST,0,41,0F3F00')" title="Copy to input">📋</span></td>
+          <td>Test character (real-time)</td>
+          <td>CHARTEST,0,41,0F3F00</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SEG=... <span class="copy-icon" onclick="copyToInput('SEG=a,b,c,d,e,f,g,dp')" title="Copy to input">📋</span></td>
+          <td>Save segment mapping</td>
+          <td>SEG=a,b,c,d,e,f,g,dp</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SEG? <span class="copy-icon" onclick="copyToInput('SEG?')" title="Copy to input">📋</span></td>
+          <td>Get segment mapping</td>
+          <td>SEG?</td>
+          <td>a,b,c,d,e,f,g,dp...</td>
+        </tr>
+        <tr>
+          <td>DUMP? <span class="copy-icon" onclick="copyToInput('DUMP?')" title="Copy to input">📋</span></td>
+          <td>Download character table</td>
+          <td>DUMP?</td>
+          <td>Binary file download</td>
+        </tr>
+        <tr>
+          <td>LOAD <span class="copy-icon" onclick="copyToInput('LOAD')" title="Copy to input">📋</span></td>
+          <td>Upload character table</td>
+          <td>LOAD (POST binary)</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>FIRMWARE <span class="copy-icon" onclick="copyToInput('FIRMWARE')" title="Copy to input">📋</span></td>
+          <td>Upload firmware (OTA)</td>
+          <td>FIRMWARE (POST binary)</td>
+          <td>OK, Rebooting...</td>
+        </tr>
+        <tr>
+          <td>TEXT &lt;value&gt; <span class="copy-icon" onclick="copyToInput('TEXT 123456')" title="Copy to input">📋</span></td>
+          <td>Show text on display</td>
+          <td>TEXT 123456</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>BRIGHT &lt;0-100&gt; <span class="copy-icon" onclick="copyToInput('BRIGHT 80')" title="Copy to input">📋</span></td>
+          <td>Set display brightness</td>
+          <td>BRIGHT 80</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>INFO? <span class="copy-icon" onclick="copyToInput('INFO?')" title="Copy to input">📋</span></td>
+          <td>Get device information</td>
+          <td>INFO?</td>
+          <td>Device Info String</td>   
+        </tr>
+        <tr>
+          <td>RESTART <span class="copy-icon" onclick="copyToInput('RESTART')" title="Copy to input">📋</span></td>
+          <td>Restart the device</td>
+          <td>RESTART</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>CLOCK <span class="copy-icon" onclick="copyToInput('CLOCK')" title="Copy to input">📋</span></td>
+          <td>Back to clock display</td>
+          <td>CLOCK</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SETTIME &lt;value&gt; <span class="copy-icon" onclick="copyToInput('SETTIME 12:34:56')" title="Copy to input">📋</span></td>
+          <td>Set the device time</td>
+          <td>SETTIME 12:34:56</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SETDATE &lt;value&gt; <span class="copy-icon" onclick="copyToInput('SETDATE 2024-06-01')" title="Copy to input">📋</span></td>
+          <td>Set the device date</td>
+          <td>SETDATE 2024-06-01</td>
+          <td>OK</td>
+        </tr>
+
+      </table>
+    </div>
+
+    
     <div class="terminal-section">
       <div class="label">SCPI COMMAND TERMINAL</div>
       <div class="input-group">
@@ -551,6 +672,22 @@ const char charGen[] = R"rawliteral(
             // Add send charset command handler
             document.getElementById('sendCharset').addEventListener('click', sendCharsetCommand);
             
+            // Add save segments map handler
+            document.getElementById('saveSegmentsMap').addEventListener('click', saveSegmentsMap);
+            
+            // Add dump and load char table handlers
+            document.getElementById('dumpCharTab').addEventListener('click', dumpCharTab);
+            document.getElementById('loadCharTab').addEventListener('click', () => {
+                document.getElementById('fileInput').click();
+            });
+            document.getElementById('fileInput').addEventListener('change', loadCharTab);
+            
+            // Add firmware update handler
+            document.getElementById('loadFirmware').addEventListener('click', () => {
+                document.getElementById('firmwareInput').click();
+            });
+            document.getElementById('firmwareInput').addEventListener('change', loadFirmware);
+            
             // Add SCPI terminal handlers
             document.getElementById('sendScpiCommand').addEventListener('click', sendScpiCommand);
             document.getElementById('clearScpiTerminal').addEventListener('click', clearScpiTerminal);
@@ -560,6 +697,9 @@ const char charGen[] = R"rawliteral(
                 currentDisplayType = this.value;
                 switchDisplayType();
             });
+            
+            // Load segments map from server
+            loadSegmentsMap();
         });
         
         // Switch between display types
@@ -608,6 +748,273 @@ const char charGen[] = R"rawliteral(
                 }
             }
         }
+        // Dump character table from device
+        async function dumpCharTab() {
+            try {
+                const response = await fetch('/cmd=DUMP?');
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                // Get binary data as blob
+                const blob = await response.blob();
+                
+                // Try to use File System Access API (modern browsers)
+                if ('showSaveFilePicker' in window) {
+                    try {
+                        const defaultFileName = `chartab_${new Date().toISOString().slice(0,19).replace(/[:.]/g, '-')}.bin`;
+                        const handle = await window.showSaveFilePicker({
+                            suggestedName: defaultFileName,
+                            types: [{
+                                description: 'Binary Files',
+                                accept: {'application/octet-stream': ['.bin']},
+                            }],
+                        });
+                        
+                        const writable = await handle.createWritable();
+                        await writable.write(blob);
+                        await writable.close();
+                        
+                        document.getElementById('commandStatus').textContent = `✓ Character table saved successfully`;
+                        document.getElementById('commandStatus').style.color = '#09ff00';
+                    } catch (err) {
+                        if (err.name === 'AbortError') {
+                            document.getElementById('commandStatus').textContent = 'Save cancelled';
+                            document.getElementById('commandStatus').style.color = '#ffaa00';
+                            return;
+                        }
+                        throw err;
+                    }
+                } else {
+                    // Fallback for older browsers
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `chartab_${new Date().toISOString().slice(0,19).replace(/[:.]/g, '-')}.bin`;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    document.getElementById('commandStatus').textContent = `✓ Character table dumped successfully`;
+                    document.getElementById('commandStatus').style.color = '#09ff00';
+                }
+                
+                const terminal = document.getElementById('terminalOutput');
+                if (terminal) {
+                    terminal.innerHTML += `<span style="color: #09ff00;">&gt; DUMP?</span>\nCharacter table saved to file\n\n`;
+                    terminal.scrollTop = terminal.scrollHeight;
+                }
+            } catch (error) {
+                document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
+                document.getElementById('commandStatus').style.color = '#ff0000';
+            }
+        }
+        
+        // Load character table to device
+        async function loadCharTab(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+            
+            try {
+                // Read file as array buffer
+                const arrayBuffer = await file.arrayBuffer();
+                
+                // Send binary data to server
+                const response = await fetch('/cmd=LOAD', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream'
+                    },
+                    body: arrayBuffer
+                });
+                
+                const result = await response.text();
+                
+                document.getElementById('commandStatus').textContent = `✓ Character table loaded: ${result}`;
+                document.getElementById('commandStatus').style.color = '#09ff00';
+                
+                const terminal = document.getElementById('terminalOutput');
+                if (terminal) {
+                    terminal.innerHTML += `<span style="color: #09ff00;">&gt; LOAD (${file.name})</span>\n${result}\n\n`;
+                    terminal.scrollTop = terminal.scrollHeight;
+                }
+                
+                // Clear file input
+                event.target.value = '';
+            } catch (error) {
+                document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
+                document.getElementById('commandStatus').style.color = '#ff0000';
+                
+                // Clear file input
+                event.target.value = '';
+            }
+        }
+        
+        // Load firmware to device (OTA update)
+        async function loadFirmware(event) {
+            const file = event.target.files[0];
+            if (!file) {
+                return;
+            }
+            
+            // Check file extension
+            if (!file.name.endsWith('.bin')) {
+                document.getElementById('firmwareStatus').textContent = '✗ Error: Only .bin files are allowed';
+                document.getElementById('firmwareStatus').style.color = '#ff0000';
+                event.target.value = '';
+                return;
+            }
+            
+            // Show file size
+            const fileSizeKB = (file.size / 1024).toFixed(2);
+            document.getElementById('firmwareStatus').textContent = `Uploading firmware: ${file.name} (${fileSizeKB} KB)...`;
+            document.getElementById('firmwareStatus').style.color = '#ffaa00';
+            
+            try {
+                // Read file as array buffer
+                const arrayBuffer = await file.arrayBuffer();
+                
+                // Send firmware to server
+                const response = await fetch('/cmd=FIRMWARE', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/octet-stream',
+                        'X-File-Size': file.size.toString()
+                    },
+                    body: arrayBuffer
+                });
+                
+                const result = await response.text();
+                
+                document.getElementById('firmwareStatus').textContent = `✓ Firmware uploaded: ${result}. Device will restart...`;
+                document.getElementById('firmwareStatus').style.color = '#09ff00';
+                
+                const terminal = document.getElementById('terminalOutput');
+                if (terminal) {
+                    terminal.innerHTML += `<span style="color: #ff9900;">&gt; FIRMWARE UPDATE (${file.name})</span>\n${result}\n\n`;
+                    terminal.scrollTop = terminal.scrollHeight;
+                }
+                
+                // Clear file input
+                event.target.value = '';
+            } catch (error) {
+                document.getElementById('firmwareStatus').textContent = `✗ Error: ${error.message}`;
+                document.getElementById('firmwareStatus').style.color = '#ff0000';
+                
+                // Clear file input
+                event.target.value = '';
+            }
+        }
+        
+        // Save segments map to device
+        async function saveSegmentsMap() {
+            // Collect all select values from bit 23 to bit 0
+            const segments = [];
+            for (let i = 23; i >= 0; i--) {
+                const select = document.getElementById(`seg-${i}`);
+                const value = select.value || 'x';
+                segments.push(value);
+            }
+            
+            const command = `SEG=${segments.join(',')}`;
+            
+            // Use sendCommand from commonRest.js if available
+            if (typeof sendCommand === 'function') {
+                sendCommand(command, (error, result) => {
+                    if (error) {
+                        document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
+                        document.getElementById('commandStatus').style.color = '#ff0000';
+                    } else {
+                        document.getElementById('commandStatus').textContent = `✓ Segments map saved: ${result}`;
+                        document.getElementById('commandStatus').style.color = '#09ff00';
+                        
+                        const terminal = document.getElementById('terminalOutput');
+                        if (terminal) {
+                            terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
+                            terminal.scrollTop = terminal.scrollHeight;
+                        }
+                    }
+                });
+            } else {
+                // Fallback to direct fetch
+                try {
+                    const response = await fetch(`/cmd=${command}`);
+                    const result = await response.text();
+                    
+                    document.getElementById('commandStatus').textContent = `✓ Segments map saved: ${result}`;
+                    document.getElementById('commandStatus').style.color = '#09ff00';
+                    
+                    const terminal = document.getElementById('terminalOutput');
+                    if (terminal) {
+                        terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                } catch (error) {
+                    document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
+                    document.getElementById('commandStatus').style.color = '#ff0000';
+                }
+            }
+        }
+        
+        // Load segments map from device
+        async function loadSegmentsMap() {
+            // Use sendCommand from commonRest.js if available
+            if (typeof sendCommand === 'function') {
+                sendCommand('SEG?', (error, result) => {
+                    if (error) {
+                        console.error('Failed to load segments map:', error);
+                        return;
+                    }
+                    
+                    // Parse response - expecting format like "a,b,c,--,dp,..."
+                    const segments = result.trim().split(',');
+                    
+                    // Set select values from bit 23 to bit 0
+                    for (let i = 23; i >= 0; i--) {
+                        const select = document.getElementById(`seg-${i}`);
+                        const index = 23 - i;
+                        if (select && segments[index]) {
+                            const value = segments[index].trim();
+                            select.value = value === '--' || value === 'x' ? '' : value;
+                            // Update segment mapping
+                            updateSegmentMapping(i, select.value);
+                        }
+                    }
+                    
+                    console.log('Segments map loaded from device');
+                });
+            } else {
+                // Fallback to direct fetch
+                try {
+                    const response = await fetch('/cmd=SEG?');
+                    const result = await response.text();
+                    
+                    // Parse response - expecting format like "a,b,c,--,dp,..."
+                    const segments = result.trim().split(',');
+                    
+                    // Set select values from bit 23 to bit 0
+                    for (let i = 23; i >= 0; i--) {
+                        const select = document.getElementById(`seg-${i}`);
+                        const index = 23 - i;
+                        if (select && segments[index]) {
+                            const value = segments[index].trim();
+                            select.value = value === '--' || value === 'x' ? '' : value;
+                            // Update segment mapping
+                            updateSegmentMapping(i, select.value);
+                        }
+                    }
+                    
+                    console.log('Segments map loaded from device');
+                } catch (error) {
+                    console.error('Failed to load segments map:', error);
+                }
+            }
+        }
+        
         async function sendCharsetCommand() {
             if (currentEditingChar === null) {
                 document.getElementById('commandStatus').textContent = 'Please select a character first!';
@@ -621,24 +1028,46 @@ const char charGen[] = R"rawliteral(
             const patternHex = pattern.toString(16).toUpperCase().padStart(6, '0');
             const command = `CHARSET,${charPos},${asciiHex},${patternHex}`;
             
-            try {
-                // Send command and get response
-                const response = await fetch(`/cmd=${command}`);
-                const result = await response.text();
-                
-                // Show in status
-                document.getElementById('commandStatus').textContent = `✓ ${command} → ${result}`;
-                document.getElementById('commandStatus').style.color = '#09ff00';
-                
-                // Also show in terminal
-                const terminal = document.getElementById('terminalOutput');
-                if (terminal) {
-                    terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
-                    terminal.scrollTop = terminal.scrollHeight;
+            // Use sendCommand from commonRest.js if available
+            if (typeof sendCommand === 'function') {
+                sendCommand(command, (error, result) => {
+                    if (error) {
+                        document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
+                        document.getElementById('commandStatus').style.color = '#ff0000';
+                    } else {
+                        // Show in status
+                        document.getElementById('commandStatus').textContent = `✓ ${command} → ${result}`;
+                        document.getElementById('commandStatus').style.color = '#09ff00';
+                        
+                        // Also show in terminal
+                        const terminal = document.getElementById('terminalOutput');
+                        if (terminal) {
+                            terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
+                            terminal.scrollTop = terminal.scrollHeight;
+                        }
+                    }
+                });
+            } else {
+                // Fallback to direct fetch
+                try {
+                    // Send command and get response
+                    const response = await fetch(`/cmd=${command}`);
+                    const result = await response.text();
+                    
+                    // Show in status
+                    document.getElementById('commandStatus').textContent = `✓ ${command} → ${result}`;
+                    document.getElementById('commandStatus').style.color = '#09ff00';
+                    
+                    // Also show in terminal
+                    const terminal = document.getElementById('terminalOutput');
+                    if (terminal) {
+                        terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                } catch (error) {
+                    document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
+                    document.getElementById('commandStatus').style.color = '#ff0000';
                 }
-            } catch (error) {
-                document.getElementById('commandStatus').textContent = `✗ Error: ${error.message}`;
-                document.getElementById('commandStatus').style.color = '#ff0000';
             }
         }
 
@@ -745,19 +1174,44 @@ const char charGen[] = R"rawliteral(
                 return;
             }
             
-            try {
-                const response = await fetch(`/cmd=${command}`);
-                const result = await response.text();
+            const terminal = document.getElementById('terminalOutput');
+            
+            // Use sendCommand from commonRest.js if available
+            if (typeof sendCommand === 'function') {
+                if (terminal) {
+                    terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n`;
+                }
                 
-                const terminal = document.getElementById('terminalOutput');
-                terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
-                terminal.scrollTop = terminal.scrollHeight;
+                sendCommand(command, (error, result) => {
+                    if (terminal) {
+                        if (error) {
+                            terminal.innerHTML += `<span style="color: #ff0000;">Error: ${error.message}</span>\n\n`;
+                        } else {
+                            terminal.innerHTML += `${result}\n\n`;
+                        }
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                });
                 
                 input.value = '';
-            } catch (error) {
-                const terminal = document.getElementById('terminalOutput');
-                terminal.innerHTML += `<span style="color: #ff0000;">&gt; ${command}</span>\n<span style="color: #ff0000;">Error: ${error.message}</span>\n\n`;
-                terminal.scrollTop = terminal.scrollHeight;
+            } else {
+                // Fallback to direct fetch
+                try {
+                    const response = await fetch(`/cmd=${command}`);
+                    const result = await response.text();
+                    
+                    if (terminal) {
+                        terminal.innerHTML += `<span style="color: #09ff00;">&gt; ${command}</span>\n${result}\n\n`;
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                    
+                    input.value = '';
+                } catch (error) {
+                    if (terminal) {
+                        terminal.innerHTML += `<span style="color: #ff0000;">&gt; ${command}</span>\n<span style="color: #ff0000;">Error: ${error.message}</span>\n\n`;
+                        terminal.scrollTop = terminal.scrollHeight;
+                    }
+                }
             }
         }
         
@@ -772,6 +1226,12 @@ const char charGen[] = R"rawliteral(
                 sendScpiCommand();
             }
         }
+        
+        // Copy command to SCPI input
+        function copyToInput(command) {
+            document.getElementById('scpiInput').value = command;
+            document.getElementById('scpiInput').focus();
+        }
 
     </script>
 
@@ -780,6 +1240,9 @@ const char charGen[] = R"rawliteral(
 </body>
 </html>
   )rawliteral";
+
+
+
 
 const char apConfig[] = R"rawliteral(
   <!DOCTYPE html>
@@ -844,216 +1307,793 @@ const char apConfig[] = R"rawliteral(
 
 const char index_html[] = R"rawliteral(
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
+  <title>Dino CLOCK DIY Project</title>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Settings Page</title>
-  <style>
-    body {
-      background-color: #121212; /* Темний фон */
-      color: #e0e0e0; /* Світлий текст */
-      font-family: Arial, sans-serif;
-      text-align: center;
-    }
-    h1 {
-      color: #4caf50; /* Зелений заголовок */
-      text-align: center;
-    }
-    form {
-      max-width: 400px;
-      margin: auto;
-      padding: 20px;
-      background-color: #1e1e1e; /* Темно-сірий фон форми */
-      border: 2px solid #4caf50; /* Зелена рамка */
-      border-radius: 10px;
-      box-shadow: 0 0 15px rgba(0, 255, 0, 0.2); /* Зелена тінь */
-    }
-    input[type='text'], input[type='datetime-local'], input[type='color'], select, input[type='range'] {
-      width: calc(100% - 22px);
-      padding: 10px;
-      margin: 8px 0;
-      border: 1px solid #4caf50; /* Зелена рамка */
-      border-radius: 5px;
-      background-color: #2c2c2c; /* Темний фон полів */
-      color: #e0e0e0; /* Світлий текст */
-    }
-    input[type='checkbox'] {
-      margin: 10px 0;
-    }
-    input[type='submit'] {
-      background-color: #2196f3; /* Синя кнопка */
-      color: white;
-      padding: 10px 15px;
-      border: none;
-      border-radius: 5px;
-      cursor: pointer;
-      transition: background-color 0.3s ease;
-    }
-    input[type='submit']:hover {
-      background-color: #1976d2; /* Темно-синя кнопка при наведенні */
-    }
-    #ambiLightColor {
-      height: 50px;
-    }
-    hr {
-      margin: 20px 0;
-      border: 1px solid #4caf50; /* Зелена лінія */
-    }
-    .range-container {
-      position: relative;
-      width: 100%;
-    }
-    .range-label {
-      position: absolute;
-      top: -30px;
-      left: 0;
-      width: 100%;
-      text-align: center;
-      color: #4caf50; /* Зелений текст */
-    }
-  </style>
+  <link rel="stylesheet" type="text/css" href="/styles.css">
 </head>
 <body>
-  <h1>VFD Dyno Clock WiFi*256x64</h1>
-  <form id="configForm">
-    <label for="ntpServer">Вибір сервера реального часу:</label>
-    <select id="ntpServer" name="ntpServer">
-      <option value="0">pool.ntp.org</option>
-      <option value="1">time.google.com</option>
-      <option value="2">time.windows.com</option>
-    </select><br>
+  <div class="main-container">
+    <div class="header">
+      <h1>Dino CLOCK DIY Project</h1>
+      <div class="version-info">Version: 2.0 | ESP32 Controller | Dino CLOCK</div>
+    </div>
 
-    <label for="timezone">Вибір часового поясу:</label>
-    <select id="timezone" name="timezone">
-      <option value="-12">UTC -12:00</option>
-      <option value="-11">UTC -11:00</option>
-      <option value="-10">UTC -10:00</option>
-      <option value="-9">UTC -9:00</option>
-      <option value="-8">UTC -8:00</option>
-      <option value="-7">UTC -7:00</option>
-      <option value="-6">UTC -6:00</option>
-      <option value="-5">UTC -5:00</option>
-      <option value="-4">UTC -4:00</option>
-      <option value="-3">UTC -3:00</option>
-      <option value="-2">UTC -2:00</option>
-      <option value="-1">UTC -1:00</option>
-      <option value="0">UTC 0:00</option>
-      <option value="1">UTC +1:00</option>
-      <option value="2">UTC +2:00</option>
-      <option value="3">UTC +3:00</option>
-      <option value="4">UTC +4:00</option>
-      <option value="5">UTC +5:00</option>
-      <option value="6">UTC +6:00</option>
-      <option value="7">UTC +7:00</option>
-      <option value="8">UTC +8:00</option>
-      <option value="9">UTC +9:00</option>
-      <option value="10">UTC +10:00</option>
-      <option value="11">UTC +11:00</option>
-      <option value="12">UTC +12:00</option>
-    </select><br>
-    
-    <hr>
-    <label for="demoType">Вибір фонової анімації:</label>
-    <select id="demoType" name="demoConf">
-      <option value="0">Disabled</option>
-      <option value="1">Space Trasher</option>
-      <option value="2">Asteroid Rain</option>
-      <option value="3">Google Dyno</option>
-    </select><br>
+    <div class="device-info-bar" id="deviceInfoBar">
+      <div class="device-info-item">
+        <span class="device-info-label">IP:</span>
+        <span class="device-info-value" id="deviceIP">---.---.---.---</span>
+      </div>
+      <span class="device-info-separator">|</span>
+      <div class="device-info-item">
+        <span class="device-info-label">Ports:</span>
+        <span class="device-info-value" id="devicePorts">---, ---</span>
+      </div>
+      <span class="device-info-separator">|</span>
+      <div class="device-info-item">
+        <span class="device-info-label">Software:</span>
+        <span class="device-info-value" id="swVersion">v-.-.--</span>
+      </div>
+      <span class="device-info-separator">|</span>
+      <div class="device-info-item">
+        <span class="device-info-label">Uptime:</span>
+        <span class="device-info-value" id="uptime">--:--:--</span>
+      </div>
+      <span class="device-info-separator">|</span>
+      <div class="device-info-item">
+        <span class="device-info-label">Status:</span>
+        <span class="device-info-value" id="deviceStatus">UNKNOWN</span>
+      </div>
+    </div>
 
-    <input type="checkbox" id="manualTime" name="manualTime">
-    <label for="manualTime">Не синхронізувати час:</label><br><br>
-    
-    <label for="datetime">Встановити дату та час:</label>
-    <input type="datetime-local" id="datetime" name="datetime"><br>
-    
-    <label for="ambiLightColor">Фонова підсвітка (Колір):</label>
-    <input type="color" id="ambiLightColor" name="ambiLightColor"><br>
-    
-    <hr>
-    <br>
-    <div class="range-container">
-      <div class="range-label" id="brightnessLabel">Яскравість: 50</div>
-      <label for="brightness">Фонова підсвітка (яскравість):</label>
-      <input type="range" id="brightness" name="brightness" min="0" max="255" value="50"><br>
+    <div class="top-control-bar">
+      <div class="nav-menu">
+        <a href="/" class="nav-button active">MainPage</a>
+        <a href="/chargen" class="nav-button">Seg Contructor</a>
+
+      </div>
+      
+      <div class="system-controls">
+        <!--
+        <div class="remote-indicator" id="remoteStatus">
+          <div>🔴</div>
+          <div>REMOTE: <span id="remoteText">INACTIVE</span></div>
+        </div>
+        
+        <button class="emergency-btn" onclick="sendCommand('EMERGENCY_STOP')">EMERGENCY</button>
+        -->
+        <div class="auto-update-control">
+          <label for="autoUpdate">Auto Update:</label>
+          <input type="checkbox" id="autoUpdate" onchange="toggleAutoUpdate()" checked>
+        </div>
+      </div>
+    </div>
+
+    <div class="terminal-section">
+      <div class="label">System Setup</div>
+      <!-- WiFi Settings -->
+      <div class="setup-group">
+        <h3 class="setup-heading">📶 WiFi Settings</h3>
+        <div class="setup-row">
+          <label class="setup-label">SSID (Network Name):</label>
+          <div class="setup-controls">
+            <input type="text" id="wifiSsid" class="text-input" placeholder="Enter WiFi network name">
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">Password:</label>
+          <div class="setup-controls">
+            <input type="password" id="wifiPassword" class="text-input" placeholder="Enter WiFi password">
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">Security:</label>
+          <div class="setup-controls">
+            <select id="wifiSecurity" class="select-input">
+              <option value="WPA2">WPA2</option>
+              <option value="WPA3">WPA3</option>
+              <option value="WPA">WPA</option>
+              <option value="OPEN">Open (No Password)</option>
+            </select>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label"></label>
+          <div class="setup-controls">
+            <button class="set-button" onclick="saveWiFiAndReboot()">SAVE AND REBOOT</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Date & Time Settings -->
+      <div class="setup-group">
+        <h3 class="setup-heading">📅 Date & Time Settings</h3>
+        <div class="setup-row">
+          <label class="setup-label">Date & Time:</label>
+          <div class="setup-controls">
+            <input type="datetime-local" id="dateTimePicker" class="datetime-input">
+            <button class="set-button" onclick="setDateTime()">OK</button>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">NTP Server:</label>
+          <div class="setup-controls">
+            <select id="ntpServer" class="select-input">
+              <option value="pool.ntp.org">pool.ntp.org</option>
+              <option value="time.google.com">time.google.com</option>
+              <option value="time.cloudflare.com">time.cloudflare.com</option>
+              <option value="time.windows.com">time.windows.com</option>
+              <option value="time.nist.gov">time.nist.gov</option>
+            </select>
+            <button class="set-button" onclick="setNtpServer()">SET</button>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">Enable NTP Sync:</label>
+          <div class="setup-controls">
+            <input type="checkbox" id="ntpEnable" class="checkbox-input" checked onchange="setNtpEnable()">
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">Timezone:</label>
+          <div class="setup-controls">
+            <select id="timezone" class="select-input">
+              <option value="-12">UTC-12:00 (Baker Island)</option>
+              <option value="-11">UTC-11:00 (American Samoa)</option>
+              <option value="-10">UTC-10:00 (Hawaii)</option>
+              <option value="-9">UTC-09:00 (Alaska)</option>
+              <option value="-8">UTC-08:00 (Los Angeles)</option>
+              <option value="-7">UTC-07:00 (Denver)</option>
+              <option value="-6">UTC-06:00 (Chicago)</option>
+              <option value="-5">UTC-05:00 (New York)</option>
+              <option value="-4">UTC-04:00 (Atlantic)</option>
+              <option value="-3">UTC-03:00 (Buenos Aires)</option>
+              <option value="-2">UTC-02:00 (Mid-Atlantic)</option>
+              <option value="-1">UTC-01:00 (Azores)</option>
+              <option value="0">UTC+00:00 (London)</option>
+              <option value="1">UTC+01:00 (Paris)</option>
+              <option value="2">UTC+02:00 (Kyiv)</option>
+              <option value="3">UTC+03:00 (Moscow)</option>
+              <option value="4">UTC+04:00 (Dubai)</option>
+              <option value="5">UTC+05:00 (Pakistan)</option>
+              <option value="6">UTC+06:00 (Bangladesh)</option>
+              <option value="7">UTC+07:00 (Bangkok)</option>
+              <option value="8">UTC+08:00 (Beijing)</option>
+              <option value="9">UTC+09:00 (Tokyo)</option>
+              <option value="10">UTC+10:00 (Sydney)</option>
+              <option value="11">UTC+11:00 (Solomon Islands)</option>
+              <option value="12">UTC+12:00 (New Zealand)</option>
+            </select>
+            <button class="set-button" onclick="setTimezone()">SET</button>
+          </div>
+        </div>
+      </div>
+
+      
+
+      <!-- Display Screens -->
+      <div class="setup-group">
+        <h3 class="setup-heading">🖥️ Display Screens</h3>
+        <table class="sensor-table">
+          <tr>
+            <td class="sensor-control">
+              <label class="setup-label">Screen 1:</label>
+              <input type="text" id="format1" class="text-input" placeholder="*HH*:*MM*:*SS*">
+              <input type="number" id="format1Time" class="number-input" min="1" max="3600" value="10" placeholder="sec">
+              <input type="checkbox" id="format1Enable" class="checkbox-input" checked>
+              <span class="checkbox-label">Enable</span>
+              <input type="checkbox" id="format1Blink" class="checkbox-input">
+              <span class="checkbox-label">Blink Point </span>
+              <button class="set-button" onclick="setDisplayFormat(1)">SET</button>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="sensor-control">
+              <label class="setup-label">Screen 2:</label>
+              <input type="text" id="format2" class="text-input" placeholder="*DD*.*MO*.*YYYY*">
+              <input type="number" id="format2Time" class="number-input" min="1" max="3600" value="5" placeholder="sec">
+              <input type="checkbox" id="format2Enable" class="checkbox-input">
+              <span class="checkbox-label">Enable</span>
+              <input type="checkbox" id="format2Blink" class="checkbox-input">
+              <span class="checkbox-label">Blink Point </span>
+              <button class="set-button" onclick="setDisplayFormat(2)">SET</button>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="sensor-control">
+              <label class="setup-label">Screen 3:</label>
+              <input type="text" id="format3" class="text-input" placeholder="*TEMP*°C *PRESS*hPa">
+              <input type="number" id="format3Time" class="number-input" min="1" max="3600" value="3" placeholder="sec">
+              <input type="checkbox" id="format3Enable" class="checkbox-input">
+              <span class="checkbox-label">Enable</span>
+              <input type="checkbox" id="format3Blink" class="checkbox-input">
+              <span class="checkbox-label">Blink Point </span>
+              <button class="set-button" onclick="setDisplayFormat(3)">SET</button>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
+            </td>
+          </tr>
+        </table>
+      </div>
+
+      <!-- Blinking Point -->
+      <div class="setup-group">
+        <h3 class="setup-heading">⚡ Blinking Point</h3>
+        <div class="setup-row">
+          <label class="setup-label">Segment Mask (HEX):</label>
+          <div class="setup-controls">
+            <input type="text" id="blinkMask" class="text-input" placeholder="0x000000" value="0x000000" style="width: 150px;">
+            <span class="variable-hint">Bitmask for segments to blink</span>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">Blink Position:</label>
+          <div class="setup-controls">
+            <input type="number" id="blinkPosition" class="number-input" min="0" max="16" value="0" placeholder="0-16">
+            <span class="variable-hint">Display digit position (0-16)</span>
+            <button class="set-button" onclick="setBlinkChar()">SET</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sensor Settings -->
+      <div class="setup-group">
+        <h3 class="setup-heading">🌡️ Sensor Settings</h3>
+        <table class="sensor-table">
+          <tr>
+            <td class="sensor-control">
+              <input type="checkbox" id="pressureSensor" class="checkbox-input" onchange="setSensor('pressure', this.checked)">
+              <label class="setup-label">Pressure Sensor:</label>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *PRESS*, *HUM*<br>Atmospheric pressure in hPa and humidity in %</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="sensor-control">
+              <input type="checkbox" id="tempSensor" class="checkbox-input" onchange="setSensor('temperature', this.checked)">
+              <label class="setup-label">Temperature Sensor:</label>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *TEMP*<br>Temperature in degrees Celsius</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="sensor-control">
+              <input type="checkbox" id="autoBrightness" class="checkbox-input" onchange="setSensor('autobrightness', this.checked)">
+              <label class="setup-label">Auto Brightness:</label>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Automatically adjust display brightness<br>based on ambient light</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="sensor-control">
+              <input type="checkbox" id="weatherApi" class="checkbox-input" onchange="setSensor('weatherapi', this.checked)">
+              <label class="setup-label">Weather API:</label>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *WTEMP*, *WCOND*<br>Weather temperature and conditions<br>from online API</span>
+            </td>
+          </tr>
+          <tr>
+            <td class="sensor-control">
+              <input type="checkbox" id="currency" class="checkbox-input" onchange="setSensor('currency', this.checked)">
+              <label class="setup-label">Currency values:</label>
+            </td>
+            <td class="sensor-description">
+              <span class="variable-hint">Variables: *EUR*, *USD*<br>Exchange rates for EUR and USD<br>in your local currency</span>
+            </td>
+          </tr>
+        </table>
+
+        <div class="setup-row">
+          <label class="setup-label">Display Brightness:</label>
+          <div class="setup-controls">
+            <input type="range" id="displayBrightness" class="slider-input" min="0" max="7" value="7">
+            <span id="displayBrightnessValue" class="slider-value">7</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Ambient Lighting Settings -->
+      <div class="setup-group">
+        <h3 class="setup-heading">💡 Ambient Lighting Settings</h3>
+        <div class="setup-row">
+          <label class="setup-label">LED Color:</label>
+          <div class="setup-controls">
+            <input type="color" id="ledColor" class="color-input" value="#00ff00">
+            <button class="set-button" onclick="setLedColor()">SET</button>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">LED Brightness:</label>
+          <div class="setup-controls">
+            <input type="range" id="ledBrightness" class="slider-input" min="0" max="255" value="128">
+            <span id="ledBrightnessValue" class="slider-value">128</span>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">LED Count:</label>
+          <div class="setup-controls">
+            <input type="number" id="ledCount" class="number-input" min="1" max="300" value="16">
+            <button class="set-button" onclick="setLedCount()">SET</button>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label">LED Effect:</label>
+          <div class="setup-controls">
+            <select id="ledEffect" class="select-input">
+              <option value="solid">Solid Color</option>
+              <option value="rainbow">Rainbow</option>
+              <option value="breathe">Breathing</option>
+              <option value="pulse">Pulse</option>
+              <option value="wave">Wave</option>
+              <option value="chase">Chase</option>
+              <option value="twinkle">Twinkle</option>
+            </select>
+            <button class="set-button" onclick="setLedEffect()">SET</button>
+          </div>
+        </div>
+      </div>
     </div>
     
-    <label for="ambiLight">Включити підсвітку:</label>
-    <input type="checkbox" id="ambiLight" name="ambiLight"><br>
-  </form>
+    <div class="info-section">
+      <div class="label">Commands examples</div>
+      <table class="command-table">
+        <tr>
+          <th>Command</th>
+          <th>Description</th>
+          <th>Example</th>
+          <th>Response</th>
+        </tr>
+        <tr>
+          <td>GET:SETTINGS? <span class="copy-icon" onclick="copyToInput('GET:SETTINGS?')" title="Copy to input">📋</span></td>
+          <td>Get all device settings</td>
+          <td>GET:SETTINGS?</td>
+          <td>JSON with all settings</td>
+        </tr>
+        <tr>
+          <td>DATETIME,... <span class="copy-icon" onclick="copyToInput('DATETIME,2026,1,31,12,30,0')" title="Copy to input">📋</span></td>
+          <td>Set date and time</td>
+          <td>DATETIME,2026,1,31,12,30,0</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>NTP:SERVER=&lt;idx&gt; <span class="copy-icon" onclick="copyToInput('NTP:SERVER=0')" title="Copy to input">📋</span></td>
+          <td>Set NTP server (0-4)</td>
+          <td>NTP:SERVER=0</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>NTP:ENABLE=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('NTP:ENABLE=1')" title="Copy to input">📋</span></td>
+          <td>Enable/disable NTP sync</td>
+          <td>NTP:ENABLE=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>TIMEZONE=&lt;idx&gt; <span class="copy-icon" onclick="copyToInput('TIMEZONE=14')" title="Copy to input">📋</span></td>
+          <td>Set timezone (0-24)</td>
+          <td>TIMEZONE=14</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>WIFI:SAVE=... <span class="copy-icon" onclick="copyToInput('WIFI:SAVE=MyNet,pass123,0')" title="Copy to input">📋</span></td>
+          <td>Save WiFi credentials</td>
+          <td>WIFI:SAVE=MyNet,pass123,0</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>REBOOT <span class="copy-icon" onclick="copyToInput('REBOOT')" title="Copy to input">📋</span></td>
+          <td>Reboot device</td>
+          <td>REBOOT</td>
+          <td>Rebooting...</td>
+        </tr>
+        <tr>
+          <td>DISPLAY:SCREEN1=... <span class="copy-icon" onclick="copyToInput('DISPLAY:SCREEN1=*HH*:*MM*,10,1,0')" title="Copy to input">📋</span></td>
+          <td>Set display screen 1</td>
+          <td>DISPLAY:SCREEN1=*HH*:*MM*,10,1,0</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>BLINK:POINT=&lt;mask,pos&gt; <span class="copy-icon" onclick="copyToInput('BLINK:POINT=0x000001,1')" title="Copy to input">📋</span></td>
+          <td>Set blinking point</td>
+          <td>BLINK:POINT=0x000001,1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>DISPLAY:BRIGHTNESS=&lt;0-255&gt; <span class="copy-icon" onclick="copyToInput('DISPLAY:BRIGHTNESS=128')" title="Copy to input">📋</span></td>
+          <td>Set display brightness</td>
+          <td>DISPLAY:BRIGHTNESS=128</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SENSOR:PRESSURE=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('SENSOR:PRESSURE=1')" title="Copy to input">📋</span></td>
+          <td>Enable/disable pressure sensor</td>
+          <td>SENSOR:PRESSURE=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SENSOR:TEMPERATURE=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('SENSOR:TEMPERATURE=1')" title="Copy to input">📋</span></td>
+          <td>Enable/disable temperature sensor</td>
+          <td>SENSOR:TEMPERATURE=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SENSOR:AUTOBRIGHTNESS=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('SENSOR:AUTOBRIGHTNESS=1')" title="Copy to input">📋</span></td>
+          <td>Enable/disable auto brightness</td>
+          <td>SENSOR:AUTOBRIGHTNESS=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SENSOR:WEATHERAPI=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('SENSOR:WEATHERAPI=1')" title="Copy to input">📋</span></td>
+          <td>Enable/disable weather API</td>
+          <td>SENSOR:WEATHERAPI=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>SENSOR:CURRENCY=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('SENSOR:CURRENCY=1')" title="Copy to input">📋</span></td>
+          <td>Enable/disable currency values</td>
+          <td>SENSOR:CURRENCY=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>LED:COLOR=&lt;R,G,B&gt; <span class="copy-icon" onclick="copyToInput('LED:COLOR=255,0,0')" title="Copy to input">📋</span></td>
+          <td>Set LED RGB color</td>
+          <td>LED:COLOR=255,0,0</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>LED:BRIGHTNESS=&lt;0-255&gt; <span class="copy-icon" onclick="copyToInput('LED:BRIGHTNESS=128')" title="Copy to input">📋</span></td>
+          <td>Set LED brightness</td>
+          <td>LED:BRIGHTNESS=128</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>LED:COUNT=&lt;1-300&gt; <span class="copy-icon" onclick="copyToInput('LED:COUNT=16')" title="Copy to input">📋</span></td>
+          <td>Set LED count</td>
+          <td>LED:COUNT=16</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>LED:EFFECT=&lt;idx&gt; <span class="copy-icon" onclick="copyToInput('LED:EFFECT=0')" title="Copy to input">📋</span></td>
+          <td>Set LED effect (0-6)</td>
+          <td>LED:EFFECT=0</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>TEXT &lt;value&gt; <span class="copy-icon" onclick="copyToInput('TEXT 123456')" title="Copy to input">📋</span></td>
+          <td>Show text on display</td>
+          <td>TEXT 123456</td>
+          <td>OK</td>
+        </tr>
+      </table>
+    </div>
 
-  <footer>
-    <p>Проєкт доступний на <a href="https://github.com/vanyap1/ESP32_VFD_Dyno_Clock" target="_blank">GitHub</a>.</p>
-  </footer>
-  
-  <script>
-    const configForm = document.getElementById('configForm');
     
-    const updateBrightnessLabel = () => {
-      const brightnessInput = document.getElementById('brightness');
-      const brightnessLabel = document.getElementById('brightnessLabel');
-      brightnessLabel.textContent = `Яскравість: ${brightnessInput.value}`;
-    };
+    <div class="terminal-section">
+      <div class="label">SCPI COMMAND TERMINAL</div>
+      <div class="input-group">
+        <label for="scpiInput">Enter SCPI Command:</label>
+        <input type="text" id="scpiInput" placeholder="e.g., INFO?" onkeypress="handleEnter(event)">
+      </div>
+      <div class="terminal-buttons">
+        <button class="psu-button" id="sendScpiCommand">Send Command</button>
+        <button class="psu-button" id="clearScpiTerminal">Clear Terminal</button>
+      </div>
+      
+      <div class="terminal-output" id="terminalOutput">SCPI Terminal Ready
 
-    document.getElementById('brightness').addEventListener('input', updateBrightnessLabel);
+</div>
+    </div>
+  </div>
+  </div>
+  
+<script>
+// Helper function to log to terminal
+function logToTerminal(command, result, isError) {
+  const terminal = document.getElementById('terminalOutput');
+  if (terminal) {
+    const color = isError ? '#ff0000' : '#09ff00';
+    terminal.innerHTML += `<span style="color: ${color};">&gt; ${command}</span>\n${result}\n\n`;
+    terminal.scrollTop = terminal.scrollHeight;
+  }
+}
 
-    const loadSettings = () => {
-      fetch('/settings')
-        .then(response => response.json())
-        .then(settings => {
-          Object.keys(settings).forEach(key => {
-            const element = document.querySelector(`[name=${key}]`);
-            if (element) {
-              if (element.type === 'checkbox') {
-                element.checked = settings[key] === 'on';
-              } else if (element.type === 'range') {
-                element.value = settings[key];
-                updateBrightnessLabel();
-              } else {
-                element.value = settings[key];
-              }
-            }
-          });
-        })
-        .catch(error => {
-          console.error('Error:', error);
+// Date & Time functions
+function setDateTime() {
+  const dt = document.getElementById('dateTimePicker').value;
+  if (!dt) {
+    logToTerminal('DATETIME', 'Error: Please select date and time', true);
+    return;
+  }
+  const date = new Date(dt);
+  const cmd = `DATETIME,${date.getFullYear()},${date.getMonth()+1},${date.getDate()},${date.getHours()},${date.getMinutes()},${date.getSeconds()}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
+
+function setNtpServer() {
+  const serverIndex = document.getElementById('ntpServer').selectedIndex;
+  const cmd = `NTP:SERVER=${serverIndex}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
+
+function setNtpEnable() {
+  const enabled = document.getElementById('ntpEnable').checked;
+  const cmd = `NTP:ENABLE=${enabled ? 1 : 0}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res || 'OK', false);
+  });
+}
+
+function setTimezone() {
+  const timezoneIndex = document.getElementById('timezone').selectedIndex;
+  const cmd = `TIMEZONE=${timezoneIndex}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
+
+// WiFi functions
+function saveWiFiAndReboot() {
+  const ssid = document.getElementById('wifiSsid').value;
+  const password = document.getElementById('wifiPassword').value;
+  const securityIndex = document.getElementById('wifiSecurity').selectedIndex;
+  
+  if (!ssid) {
+    logToTerminal('WIFI:SAVE', 'Error: Please enter SSID', true);
+    return;
+  }
+  
+  const cmd = `WIFI:SAVE=${ssid},${password},${securityIndex}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else {
+      logToTerminal(cmd, res + '\nRebooting device...', false);
+      // Send reboot command
+      setTimeout(() => {
+        sendCommand('REBOOT', (err2, res2) => {
+          if (err2) logToTerminal('REBOOT', 'Error: ' + err2.message, true);
+          else logToTerminal('REBOOT', res2, false);
         });
-    };
+      }, 500);
+    }
+  });
+}
 
-    window.onload = loadSettings;
+// Display Screen functions
+function setDisplayFormat(num) {
+  const format = document.getElementById(`format${num}`).value;
+  const time = document.getElementById(`format${num}Time`).value;
+  const enabled = document.getElementById(`format${num}Enable`).checked;
+  const blink = document.getElementById(`format${num}Blink`).checked;
+  const cmd = `DISPLAY:SCREEN${num}=${format},${time},${enabled ? 1 : 0},${blink ? 1 : 0}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
 
-    const handleChange = (event) => {
-      const formData = new FormData(configForm);
-      const fieldName = event.target.name;
-      const fieldValue = formData.get(fieldName);
+// Blinking Point function
+function setBlinkChar() {
+  const mask = document.getElementById('blinkMask').value;
+  const position = document.getElementById('blinkPosition').value;
+  const cmd = `BLINK:POINT=${mask},${position}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
 
-      const data = { [fieldName]: fieldValue };
+// Sensor functions
+function setSensor(type, enabled) {
+  const cmd = `SENSOR:${type.toUpperCase()}=${enabled ? 1 : 0}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res || 'OK', false);
+  });
+}
 
-      fetch('/submit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(data)
-      })
-      .then(response => response.text())
-      .then(data => {
-        console.log(`Settings saved for ${fieldName}:`, data);
-      })
-      .catch(error => {
-        console.error('Error:', error);
-      });
-    };
+function setDisplayBrightness() {
+  const brightness = document.getElementById('displayBrightness').value;
+  const cmd = `DISPLAY:BRIGHTNESS=${brightness}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res || 'OK', false);
+  });
+}
 
-    configForm.addEventListener('change', handleChange);
-    configForm.addEventListener('submit', function(event) {
-      event.preventDefault();
+// LED functions
+function setLedColor() {
+  const color = document.getElementById('ledColor').value;
+  // Convert hex to RGB
+  const r = parseInt(color.substr(1,2), 16);
+  const g = parseInt(color.substr(3,2), 16);
+  const b = parseInt(color.substr(5,2), 16);
+  const cmd = `LED:COLOR=${r},${g},${b}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
+
+function setLedBrightness() {
+  const brightness = document.getElementById('ledBrightness').value;
+  const cmd = `LED:BRIGHTNESS=${brightness}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res || 'OK', false);
+  });
+}
+
+function setLedCount() {
+  const count = document.getElementById('ledCount').value;
+  const cmd = `LED:COUNT=${count}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
+
+function setLedEffect() {
+  const effectIndex = document.getElementById('ledEffect').selectedIndex;
+  const cmd = `LED:EFFECT=${effectIndex}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
+  });
+}
+
+// Load all settings from device
+function loadSettings() {
+  const cmd = 'GET:SETTINGS?';
+  sendCommand(cmd, (err, res) => {
+    if (err) {
+      logToTerminal(cmd, 'Error: ' + err.message, true);
+      return;
+    }
+    
+    try {
+      const settings = JSON.parse(res);
+      
+      // WiFi settings
+      if (settings.wifi) {
+        document.getElementById('wifiSsid').value = settings.wifi.ssid || '';
+        document.getElementById('wifiSecurity').selectedIndex = settings.wifi.security || 0;
+      }
+      
+      // NTP settings
+      if (settings.ntp) {
+        document.getElementById('ntpServer').selectedIndex = settings.ntp.server || 0;
+        document.getElementById('ntpEnable').checked = settings.ntp.enabled || false;
+      }
+      
+      // Timezone
+      if (settings.timezone !== undefined) {
+        document.getElementById('timezone').selectedIndex = settings.timezone || 14; // default UTC+2 (Kyiv)
+      }
+      
+      // Display screens
+      if (settings.formats && settings.formats.length >= 3) {
+        for (let i = 0; i < 3; i++) {
+          const format = settings.formats[i];
+          document.getElementById(`format${i+1}`).value = format.text || '';
+          document.getElementById(`format${i+1}Time`).value = format.time || 10;
+          document.getElementById(`format${i+1}Enable`).checked = format.enabled || false;
+          document.getElementById(`format${i+1}Blink`).checked = format.blink || false;
+        }
+      }
+      
+      // Blinking special char
+      if (settings.blink) {
+        document.getElementById('blinkMask').value = settings.blink.mask || '0x000000';
+        document.getElementById('blinkPosition').value = settings.blink.position || 0;
+      }
+      
+      // Sensors
+      if (settings.sensors) {
+        document.getElementById('pressureSensor').checked = settings.sensors.pressure || false;
+        document.getElementById('tempSensor').checked = settings.sensors.temperature || false;
+        document.getElementById('autoBrightness').checked = settings.sensors.autobrightness || false;
+        document.getElementById('weatherApi').checked = settings.sensors.weatherapi || false;
+        document.getElementById('currency').checked = settings.sensors.currency || false;
+      }
+      
+      // Display brightness
+      if (settings.display) {
+        const brightness = settings.display.brightness || 128;
+        document.getElementById('displayBrightness').value = brightness;
+        document.getElementById('displayBrightnessValue').textContent = brightness;
+      }
+      
+      // LED settings
+      if (settings.led) {
+        // LED Color
+        if (settings.led.color) {
+          const r = settings.led.color.r.toString(16).padStart(2, '0');
+          const g = settings.led.color.g.toString(16).padStart(2, '0');
+          const b = settings.led.color.b.toString(16).padStart(2, '0');
+          document.getElementById('ledColor').value = `#${r}${g}${b}`;
+        }
+        
+        // LED Brightness
+        const ledBrightness = settings.led.brightness || 128;
+        document.getElementById('ledBrightness').value = ledBrightness;
+        document.getElementById('ledBrightnessValue').textContent = ledBrightness;
+        
+        // LED Count
+        document.getElementById('ledCount').value = settings.led.count || 16;
+        
+        // LED Effect
+        document.getElementById('ledEffect').selectedIndex = settings.led.effect || 0;
+      }
+      
+      logToTerminal(cmd, 'Settings loaded successfully', false);
+    } catch (e) {
+      logToTerminal(cmd, 'Error parsing settings: ' + e.message, true);
+    }
+  });
+}
+
+// Update slider value displays and auto-send on release
+document.addEventListener('DOMContentLoaded', function() {
+  const displayBrightness = document.getElementById('displayBrightness');
+  const displayBrightnessValue = document.getElementById('displayBrightnessValue');
+  if (displayBrightness && displayBrightnessValue) {
+    displayBrightness.addEventListener('input', function() {
+      displayBrightnessValue.textContent = this.value;
     });
-  </script>
+    // Auto-send on release
+    displayBrightness.addEventListener('change', function() {
+      setDisplayBrightness();
+    });
+  }
+  
+  const ledBrightness = document.getElementById('ledBrightness');
+  const ledBrightnessValue = document.getElementById('ledBrightnessValue');
+  if (ledBrightness && ledBrightnessValue) {
+    ledBrightness.addEventListener('input', function() {
+      ledBrightnessValue.textContent = this.value;
+    });
+    // Auto-send on release
+    ledBrightness.addEventListener('change', function() {
+      setLedBrightness();
+    });
+  }
+  
+  // Set current date/time as default
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  const dateTimeInput = document.getElementById('dateTimePicker');
+  if (dateTimeInput) {
+    dateTimeInput.value = now.toISOString().slice(0,16);
+  }
+  
+  // Load all settings from device
+  loadSettings();
+});
+</script>
+
+<script src="/commonRest.js"></script>
+  
 </body>
 </html>
-
 )rawliteral";
 
 #endif

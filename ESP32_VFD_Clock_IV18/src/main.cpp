@@ -14,6 +14,7 @@
 #include "setup.h"
 #include <time.h>
 #include <esp_task_wdt.h>
+#include <Update.h>
 
 #define LED_HTTP 16
 #define LED_WIFI 17
@@ -23,7 +24,7 @@
 #define VFD_EN
 
 
-#define USE_PREDEFINED_SCREEN
+//#define USE_PREDEFINED_SCREEN
 
 PT63XX vfd(27, IV18);
 
@@ -351,6 +352,168 @@ void loop()
               serializeJson(jsonDoc, jsonResponse);
               client.println(jsonResponse);
             }
+            else if (header.indexOf("POST /cmd=FIRMWARE") >= 0)
+            {
+              // OTA оновлення прошивки
+              Serial.println("Starting OTA firmware update...");
+              
+              // Витягуємо розмір файлу з заголовка
+              int contentLength = 0;
+              int headerStart = header.indexOf("Content-Length: ");
+              if (headerStart != -1) {
+                headerStart += 16; // Довжина "Content-Length: "
+                int headerEnd = header.indexOf('\r', headerStart);
+                if (headerEnd == -1) headerEnd = header.indexOf('\n', headerStart);
+                String lengthStr = header.substring(headerStart, headerEnd);
+                contentLength = lengthStr.toInt();
+              }
+              
+              // Читаємо заголовки до порожнього рядка
+              while (client.connected()) {
+                String line = client.readStringUntil('\n');
+                if (line == "\r" || line.length() == 0) break;
+              }
+              
+              Serial.print("Expected firmware size: ");
+              Serial.print(contentLength);
+              Serial.println(" bytes");
+              
+              if (contentLength > 0) {
+                // Починаємо OTA update
+                if (!Update.begin(contentLength)) {
+                  Serial.println("Not enough space for OTA update");
+                  client.println("HTTP/1.1 500 Internal Server Error");
+                  client.println("Content-type:text/plain");
+                  client.println("Connection: close");
+                  client.println();
+                  client.println("Not enough space");
+                } else {
+                  // Читаємо та записуємо просливку
+                  size_t written = 0;
+                  uint8_t buffer[512];
+                  
+                  while (written < contentLength && client.connected()) {
+                    size_t available = client.available();
+                    if (available) {
+                      size_t toRead = min(available, sizeof(buffer));
+                      size_t bytesRead = client.read(buffer, toRead);
+                      
+                      if (Update.write(buffer, bytesRead) != bytesRead) {
+                        Serial.println("Write error during OTA update");
+                        break;
+                      }
+                      
+                      written += bytesRead;
+                      
+                      // Виводимо прогрес
+                      if (written % 10240 == 0 || written == contentLength) {
+                        Serial.print("Progress: ");
+                        Serial.print((written * 100) / contentLength);
+                        Serial.println("%");
+                      }
+                    } else {
+                      delay(1);
+                    }
+                  }
+                  
+                  if (written == contentLength) {
+                    if (Update.end(true)) {
+                      Serial.println("OTA update completed successfully");
+                      
+                      client.println("HTTP/1.1 200 OK");
+                      client.println("Content-type:text/plain");
+                      client.println("Connection: close");
+                      client.println();
+                      client.println("Firmware updated successfully. Restarting...");
+                      
+                      delay(1000);
+                      ESP.restart();
+                    } else {
+                      Serial.print("Update end error: ");
+                      Serial.println(Update.errorString());
+                      
+                      client.println("HTTP/1.1 500 Internal Server Error");
+                      client.println("Content-type:text/plain");
+                      client.println("Connection: close");
+                      client.println();
+                      client.print("Update error: ");
+                      client.println(Update.errorString());
+                    }
+                  } else {
+                    Serial.println("Incomplete firmware upload");
+                    Update.abort();
+                    
+                    client.println("HTTP/1.1 400 Bad Request");
+                    client.println("Content-type:text/plain");
+                    client.println("Connection: close");
+                    client.println();
+                    client.println("Incomplete firmware data");
+                  }
+                }
+              } else {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid content length");
+              }
+            }
+            else if (header.indexOf("POST /cmd=LOAD") >= 0)
+            {
+              // Завантаження customCharData від користувача
+              Serial.println("Receiving character table data...");
+              
+              // Читаємо заголовки до порожнього рядка
+              while (client.available() && currentLine.length() > 0) {
+                char c = client.read();
+                if (c == '\n') {
+                  if (currentLine.length() == 0) break;
+                  currentLine = "";
+                } else if (c != '\r') {
+                  currentLine += c;
+                }
+              }
+              
+              // Читаємо бінарні дані (384 байти = 96 * sizeof(uint32_t))
+              uint8_t* dataPtr = (uint8_t*)sysSetupStruc.customCharData;
+              int bytesRead = 0;
+              int expectedBytes = sizeof(sysSetupStruc.customCharData);
+              
+              unsigned long startTime = millis();
+              while (bytesRead < expectedBytes && (millis() - startTime < 5000)) {
+                if (client.available()) {
+                  dataPtr[bytesRead++] = client.read();
+                }
+              }
+              
+              if (bytesRead == expectedBytes) {
+                // Копіюємо в глобальний customCharData та зберігаємо в EEPROM
+                memcpy(customCharData, sysSetupStruc.customCharData, sizeof(customCharData));
+                EEPROM.put(0, sysSetupStruc);
+                EEPROM.commit();
+                
+                Serial.print("Character table loaded successfully: ");
+                Serial.print(bytesRead);
+                Serial.println(" bytes");
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Character table loaded successfully");
+              } else {
+                Serial.print("Error: Expected ");
+                Serial.print(expectedBytes);
+                Serial.print(" bytes, got ");
+                Serial.println(bytesRead);
+                
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Error: Incomplete data received");
+              }
+            }
             else if (header.indexOf("POST /submit") >= 0)
             {
 
@@ -496,6 +659,90 @@ void loop()
                                   "READY";
               client.println(deviceInfo);
             }
+            //GET /cmd=DUMP? - вивантаження customCharData як бінарних даних
+            else if(header.indexOf("GET /cmd=DUMP?") >= 0)
+            {
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:application/octet-stream");
+              client.println("Content-Disposition: attachment; filename=\"chartab.bin\"");
+              client.println("Connection: close");
+              client.println();
+              
+              // Відправляємо customCharData як бінарні дані (96 uint32_t = 384 байти)
+              client.write((const uint8_t*)sysSetupStruc.customCharData, sizeof(sysSetupStruc.customCharData));
+              
+              Serial.println("Custom character table dumped (384 bytes)");
+            }
+            else if(header.indexOf("GET /cmd=SEG?") >= 0){
+              //return - "x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,dp,g,f,e,d,c,a,b"
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+  
+              // Формуємо рядок з segmentsBitMask
+              String dumpData = "";
+              
+              // Перевіряємо, чи масив ініційований (перший байт не 0xFF)
+              if (sysSetupStruc.segmentsBitMask[0] == 0xFF) {
+                // EEPROM не ініційована - повертаємо дефолтний шаблон
+                dumpData = "x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,dp,g,f,e,d,c,b,a";
+              } else {
+                // Повертаємо збережені дані
+                for (int i = 0; i < 96 && sysSetupStruc.segmentsBitMask[i] != '\0'; i++) {
+                  char byte = (char)sysSetupStruc.segmentsBitMask[i];
+                  // Замінюємо 0xFF на 'x'
+                  if ((uint8_t)byte == 0xFF) {
+                    dumpData += 'x';
+                  } else {
+                    dumpData += byte;
+                  }
+                }
+              }
+  
+              Serial.print("SEG response: ");
+              Serial.println(dumpData);
+  
+              client.println(dumpData);
+            }
+            // handler co,,and - /cmd=SEG=x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,a,b,c,d,e,f,g,dp
+            // parce to uint8_t segmentsBitMask[96];
+            // convert string to byte array and save to sysSetupStruc.segmentsBitMask
+            
+            else if(header.indexOf("GET /cmd=SEG=") >= 0){
+              int paramStart = header.indexOf("GET /cmd=SEG=") + strlen("GET /cmd=SEG=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              params.trim();
+  
+              Serial.print("Received SEG command with params: ");
+              Serial.println(params);
+              
+              // Копіюємо весь рядок посимвольно (включаючи коми)
+              int len = params.length();
+              if (len > 95) len = 95; // Обмежуємо довжину
+              
+              for (int i = 0; i < len; i++) {
+                sysSetupStruc.segmentsBitMask[i] = (uint8_t)params[i];
+              }
+              
+              // Додаємо null-термінатор після останнього байта
+              sysSetupStruc.segmentsBitMask[len] = '\0';
+  
+              // Зберігаємо в EEPROM
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+  
+              Serial.print("Segment bitmask updated. Total bytes: ");
+              Serial.println(len);
+  
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Segment bitmask updated");
+            }
+
+            
             else if(header.indexOf("GET /cmd=CLOCK") >= 0){
               screeenUpdateRestricted = false;
               client.println("HTTP/1.1 200 OK");
