@@ -63,6 +63,8 @@ class PT63XX {
     void setBrightness(uint8_t brightness);
     void displayOff();
     void displayOn();
+    void setBlinkCharData(uint32_t charMask, uint8_t position);
+    void blinkState(uint8_t state);
     void clearDisplay();
     void writeChar(uint8_t position, uint8_t character);
     void writeRawData(uint8_t position, uint32_t data);

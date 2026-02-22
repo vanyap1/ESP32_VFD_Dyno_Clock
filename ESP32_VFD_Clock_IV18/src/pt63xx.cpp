@@ -5,6 +5,9 @@
 
 uint8_t vfd_buff[36];
 uint8_t specialCharData = 0;
+uint32_t blinkCharMask = 0;
+uint8_t  blinkCharPosition = -1;
+uint8_t blinkCharState = 0;
 uint32_t customCharData[96] = {0};
 
 uint8_t IVL2_7_characters[] = {
@@ -132,6 +135,7 @@ uint8_t IV18_characters[] = {
 };
 
 
+
 PT63XX::PT63XX(int latchPin, SCREEN_TYPE type)
   : _latchPin(latchPin), _screenType(type) {
     digitalWrite(_latchPin, HIGH);
@@ -152,18 +156,14 @@ void screen_init() {
 void PT63XX::begin() {
     digitalWrite(_latchPin, HIGH);
     pinMode(_latchPin, OUTPUT);
-    // SCK=5, MISO=18, MOSI=19, SS=-1 (не використовується)
     SPI.begin(5, 18, 19, -1);
-    // Налаштування SPI (LSBFIRST, MODE0, частота) встановлюються через beginTransaction()
     memset(vfd_buff, 0, sizeof(vfd_buff));
     delay(200);
-
     sendCommand(COMMAND_4 | DISPLAY_OFF); // Display OFF
     delay(10);
 
     sendCommand(COMMAND_2 | NORMAL_OPERATION_MODE | INCREMENT_ADDRESS | WRITE_DATA_TO_DISPLAY_MODE); // Command 2 (Normal operation, Increment address, Write data to display)
     delay(10);
-    //Command 3: The same functionnal.
     clearDisplay();
     switch (_screenType)
     {
@@ -186,6 +186,14 @@ void PT63XX::begin() {
     setBrightness(MAX_BRIGHTNESS);  
 }
 
+void PT63XX::setBlinkCharData(uint32_t charMask, uint8_t position){
+  blinkCharMask = charMask;
+  blinkCharPosition = position;
+}
+
+void PT63XX::blinkState(uint8_t state){
+  blinkCharState = state;
+}
 
 void PT63XX::clearDisplay() {
   sendCommand(0x40);
@@ -221,6 +229,14 @@ void PT63XX::writeRawData(uint8_t position, uint32_t data){
   if (position >= 12) {
     return; // Invalid position
   }
+  if (blinkCharPosition == position) {
+    if (blinkCharState) {
+      data = data | blinkCharMask;
+    } else {
+      data = data & ~blinkCharMask;
+    } 
+  }
+
   vfd_buff[0] = COMMAND_3 + (position*3); // Set address
   vfd_buff[1] = data & 0xFF; // Lower byte
   vfd_buff[2] = (data >> 8) & 0xFF; // Middle byte
@@ -238,15 +254,14 @@ void PT63XX::writeStringUniverslaChrTab(const char* str, uint8_t position){
    if(currentPos >= 16) break; // Prevent overflow
    uint8_t charCode = str[i];
    
-   // Обробка коми та крапки - додати до попереднього символу
    if(charCode == '.' || charCode == ',' || charCode == ':') {
      if (hasLastChar) {
-       // Взяти значення коми з таблиці та об'єднати з попереднім символом
+       
        uint32_t dotSegments = customCharData[charCode - 32];
        lastCharData = lastCharData | dotSegments;
        writeRawData(currentPos-1, lastCharData);
      } else {
-       // Якщо це перший символ - виводимо саму кому
+
        lastCharData = customCharData[charCode - 32];
        writeRawData(currentPos, lastCharData);
        hasLastChar = true;
@@ -302,9 +317,9 @@ void PT63XX::writeString(const char* str, uint8_t position) {
       lastCharData = IV18_characters[charCode - 32];
       break;
     case IVL2_7:
-      //lastCharData = IVL2_7_characters[charCode - 32];
+      
       lastCharData =IVL2_7_characters[charCode - 32];
-      // bits 6, 7 - dots between hours/minutes in grid 2
+
       writeChar(currentPos, lastCharData); // Always turn on dots at position 4
       break;
     
@@ -343,7 +358,6 @@ void PT63XX::sendCommand(uint8_t command) {
 void PT63XX::sendData(uint8_t *data, size_t length) {
   digitalWrite(_latchPin, LOW);
   delayMicroseconds(IV18_VFD_LATCH_DELAY_US);
-  //memcpy(vfd_buff, data, length);
   SPI.beginTransaction(SPISettings(IV18_VFD_SPI_SPEED, LSBFIRST, SPI_MODE3));
   SPI.transferBytes(data, nullptr, length);
   SPI.endTransaction();

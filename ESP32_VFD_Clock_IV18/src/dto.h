@@ -23,6 +23,30 @@ typedef struct{
   uint8_t screenDemoMode;
   uint32_t customCharData[96];
   uint8_t segmentsBitMask[96];
+  
+  // Display formats (3 screens as arrays)
+  char displayFormat[3][32];
+  uint8_t displayFormatTime[3];
+  bool displayFormatEnable[3];
+  bool displayFormatBlink[3];
+  
+  // Blink settings
+  uint32_t blinkMask;
+  uint8_t blinkPosition;
+  
+  // Sensors
+  bool sensorPressure;
+  bool sensorTemperature;
+  bool sensorAutoBrightness;
+  bool sensorWeatherApi;
+  bool sensorCurrency;
+  
+  // Display
+  uint8_t displayBrightness;
+  
+  // LED
+  uint8_t ledCount;
+  uint8_t ledEffect;
 }SystemSetup;
 
 

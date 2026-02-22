@@ -127,8 +127,7 @@ void httpLoop(String options) {
                                 return;
                             }
                         }
-                        
-                        
+                                                
                         bool isCaptivePortalCheck = false;
                         
                       
@@ -159,7 +158,6 @@ void httpLoop(String options) {
                             break;
                         }
                         
-                        // Для всіх інших запитів - показати сторінку налаштування
                         Serial.println("Sending config page...");
                         client.println("HTTP/1.1 200 OK");
                         client.println("Content-type:text/html; charset=utf-8");
@@ -169,11 +167,9 @@ void httpLoop(String options) {
                         client.println("Connection: close");
                         client.println();
 
-                        // Замінюємо %OPTIONS% на список мереж
                         String page = apConfig;
                         page.replace("%OPTIONS%", options);
 
-                        // Відправляємо порціями для великих файлів
                         const char* ptr = page.c_str();
                         size_t len = page.length();
                         const size_t chunkSize = 512;
@@ -195,7 +191,6 @@ void httpLoop(String options) {
                 }
             }
         }
-
         delay(10);
         client.stop();
         Serial.println("Client Disconnected.");

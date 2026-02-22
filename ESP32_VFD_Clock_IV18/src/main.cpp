@@ -37,7 +37,7 @@ SystemSetup sysSetupStruc;
 WiFiServer serverConfigured(80);
 WiFiUDP ntpUDP;
 
-#define NTP_UPDATE_INTERVAL 60000  // Оновлення часу кожні 60 секунд
+#define NTP_UPDATE_INTERVAL 216000000  // Оновлення часу кожні 60*60*60 секунд
 #define NTP_FIRST_UPDATE_DELAY 5000  // Затримка перед першим оновленням часу
 
 uint32_t ntpUpdateInterval = NTP_FIRST_UPDATE_DELAY;  // Оновлення часу кожні 60 секунд
@@ -47,6 +47,73 @@ const char *ntpServers[] = {"pool.ntp.org", "time.google.com", "time.windows.com
 NTPClient timeClient(ntpUDP, ntpServers[0]);
 
 bool screeenUpdateRestricted = false;
+
+// Тестові дані для сенсорів та API
+float sensorTemp = 23.5;       // Температура з датчика
+int sensorPress = 1013;         // Тиск з датчика
+int sensorHum = 65;             // Вологість з датчика
+float weatherTemp = 18.0;       // Температура з Weather API
+float currencyEUR = 43.5;       // Курс євро
+float currencyUSD = 40.2;       // Курс долара
+float currencyBTC = 98.3;       // Курс біткоіна (в тисячах)
+char weatherCond[16] = "Cloudy"; // Умови погоди
+
+// Параметри секвенсера екранів
+int currentScreenIndex = 0;     // Поточний екран (0, 1, 2)
+uint32_t screenSwitchTimer = 0; // Таймер перемикання екранів
+
+// Функція для парсингу формату і заміни змінних
+String parseDisplayFormat(String format, struct tm &timeinfo) {
+  String result = format;
+  char buffer[16];
+  
+  // Час
+  sprintf(buffer, "%02d", timeinfo.tm_hour);
+  result.replace("*HH*", buffer);
+  
+  sprintf(buffer, "%02d", timeinfo.tm_min);
+  result.replace("*MM*", buffer);
+  
+  sprintf(buffer, "%02d", timeinfo.tm_sec);
+  result.replace("*SS*", buffer);
+  
+  sprintf(buffer, "%02d", timeinfo.tm_mday);
+  result.replace("*DD*", buffer);
+  
+  sprintf(buffer, "%02d", timeinfo.tm_mon + 1);
+  result.replace("*MO*", buffer);
+  
+  sprintf(buffer, "%02d", (timeinfo.tm_year + 1900) % 100);
+  result.replace("*YY*", buffer);
+  
+  sprintf(buffer, "%04d", timeinfo.tm_year + 1900);
+  result.replace("*YYYY*", buffer);
+  
+  sprintf(buffer, "%02d", (int)sensorTemp);
+  result.replace("*TEMP*", buffer);
+  
+  sprintf(buffer, "%03d", sensorPress);
+  result.replace("*PRESS*", buffer);
+  
+  sprintf(buffer, "%02d", sensorHum);
+  result.replace("*HUM*", buffer);
+  
+  sprintf(buffer, "%02d", (int)weatherTemp);
+  result.replace("*WTEMP*", buffer);
+  
+  result.replace("*WCOND*", weatherCond);
+  
+  sprintf(buffer, "%.1f", currencyEUR);
+  result.replace("*EUR*", buffer);
+  
+  sprintf(buffer, "%.1f", currencyUSD);
+  result.replace("*USD*", buffer);
+  
+  sprintf(buffer, "%.1f", currencyBTC);
+  result.replace("*BTC*", buffer);
+  
+  return result;
+}
 
 // URL decode function
 String urlDecode(String str) {
@@ -71,6 +138,59 @@ String urlDecode(String str) {
   return decoded;
 }
 
+
+void initDefaultConfig()
+{
+
+  memset(&sysSetupStruc.ssid, 0, sizeof(sysSetupStruc.ssid));
+  memset(&sysSetupStruc.pass, 0, sizeof(sysSetupStruc.pass));
+  
+
+  sysSetupStruc.ntpEN = 1; 
+  sysSetupStruc.ntpServerIndex = 0;
+  sysSetupStruc.ntpTimeZone = 0;
+  
+  
+  strcpy(sysSetupStruc.displayFormat[0], "  *HH* *MM*");
+  sysSetupStruc.displayFormatTime[0] = 3;
+  sysSetupStruc.displayFormatEnable[0] = true;
+  sysSetupStruc.displayFormatBlink[0] = true;
+  
+  strcpy(sysSetupStruc.displayFormat[1], "1 1111111");
+  sysSetupStruc.displayFormatTime[1] = 2;
+  sysSetupStruc.displayFormatEnable[1] = true;
+  sysSetupStruc.displayFormatBlink[1] = false;
+  
+  strcpy(sysSetupStruc.displayFormat[2], "2 222222");
+  sysSetupStruc.displayFormatTime[2] = 2;
+  sysSetupStruc.displayFormatEnable[2] = true;
+  sysSetupStruc.displayFormatBlink[2] = false;
+  
+
+  sysSetupStruc.blinkMask = 0xFFFFFF;
+  sysSetupStruc.blinkPosition = 4;
+  
+
+  sysSetupStruc.sensorPressure = true;
+  sysSetupStruc.sensorTemperature = true;
+  sysSetupStruc.sensorAutoBrightness = false;
+  sysSetupStruc.sensorWeatherApi = true;
+  sysSetupStruc.sensorCurrency = true;
+  
+  sysSetupStruc.displayBrightness = 1;
+  sysSetupStruc.ambLightColr[0] = 22;  // r
+  sysSetupStruc.ambLightColr[1] = 254; // g
+  sysSetupStruc.ambLightColr[2] = 80;  // b
+  sysSetupStruc.ambLightBrightness = 255;
+  sysSetupStruc.ledCount = 4;
+  sysSetupStruc.ledEffect = 1;
+  
+  sysSetupStruc.FirstStart = 55;
+  
+  EEPROM.put(0, sysSetupStruc);
+  EEPROM.commit();
+}
+
 void setup()
 {
   pinMode(LED_HTTP, OUTPUT);
@@ -83,7 +203,6 @@ void setup()
   sysSetupStruc.ntpTimeZone = 0;
   
   Serial.begin(115200);
-  //Serial.println("Hello, Arduino!");
 
   for (int i = 0; i < 2; i++)
   {
@@ -94,13 +213,12 @@ void setup()
   }
   vfd.begin();
   vfd.clearDisplay();
+   
   delay(200);
-  digitalWrite(INV_ENABLE, HIGH); // Enable inverter power
-
+  digitalWrite(INV_ENABLE, HIGH); 
   EEPROM.begin(sizeof(sysSetupStruc) + 1);
   EEPROM.get(0, sysSetupStruc);
   
-  // Завантажити customCharData з EEPROM
   memcpy(customCharData, sysSetupStruc.customCharData, sizeof(customCharData));
 
   if (digitalRead(USR_BTN) == LOW)
@@ -110,12 +228,9 @@ void setup()
 
   if (sysSetupStruc.FirstStart != 55)
   {
-    Serial.println("First start detected. Starting AP mode...");
-    memset(&sysSetupStruc.ssid, 0, sizeof(sysSetupStruc.ssid));
-    memset(&sysSetupStruc.pass, 0, sizeof(sysSetupStruc.pass));
-    sysSetupStruc.FirstStart = 55;
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
+    Serial.println("First start detected. Initializing default configuration...");
+    initDefaultConfig();
+    
     digitalWrite(LED_HTTP, HIGH);
     #if defined(USE_PREDEFINED_SCREEN)
       vfd.writeString("Conf", 1);
@@ -158,7 +273,7 @@ void setup()
   WiFi.begin(sysSetupStruc.ssid, sysSetupStruc.pass);
 
   int attempts = 0;
-  const int maxAttempts = 20; // 20 * 500ms = 10 секунд
+  const int maxAttempts = 20;
 
   while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts)
   {
@@ -188,7 +303,6 @@ void setup()
   configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
 
 
-  // Вивести IP-адресу на дисплей
     
   #if defined(USE_PREDEFINED_SCREEN)
     vfd.writeString("                ", 0);
@@ -198,7 +312,6 @@ void setup()
     IPAddress ip = WiFi.localIP();
     char ipPart[7];
     
-    // Перший октет: -192
     sprintf(ipPart, "-%d", ip[0]);
   #if defined(USE_PREDEFINED_SCREEN)
     vfd.writeString(ipPart, 0);
@@ -206,8 +319,7 @@ void setup()
     vfd.writeStringUniverslaChrTab(ipPart, 0);
   #endif
     delay(500);
-    
-    // Другий октет: -168
+
     sprintf(ipPart, "-%d", ip[1]);
   #if defined(USE_PREDEFINED_SCREEN)
     vfd.writeString(ipPart, 0);
@@ -216,7 +328,6 @@ void setup()
   #endif
     delay(500);
     
-    // Третій октет: -001 (з нулями)
     sprintf(ipPart, "-%03d", ip[2]);
   #if defined(USE_PREDEFINED_SCREEN)
     vfd.writeString(ipPart, 0);
@@ -225,7 +336,6 @@ void setup()
   #endif
     delay(500);
     
-    // Четвертий октет: -099 (з нулями)
     sprintf(ipPart, "-%03d", ip[3]);
   #if defined(USE_PREDEFINED_SCREEN)
     vfd.writeString(ipPart, 0);
@@ -234,6 +344,7 @@ void setup()
   #endif
     delay(500);
 
+  vfd.setBlinkCharData(sysSetupStruc.blinkMask, sysSetupStruc.blinkPosition);
     
 
   
@@ -261,26 +372,42 @@ void loop()
     screenUpdateTimer = millis();
     blinkingDot = !blinkingDot;
     
-    
-    
-    
-
     time_t now;
-  
     time(&now);
     localtime_r(&now, &timeinfo);
 
-    char timeStr[10];
-    sprintf(timeStr, "%02d:%02d:%02d", timeinfo.tm_hour, timeinfo.tm_min, timeinfo.tm_sec);
+    // Auto-brightness control based on time
+    if (sysSetupStruc.sensorAutoBrightness) {
+      int hour = timeinfo.tm_hour;
+      // Night mode: 21:00 - 7:00 = brightness 1, otherwise = 7
+      uint8_t autoBrightness = (hour >= 21 || hour < 7) ? 1 : 7;
+      vfd.setBrightness(autoBrightness);
+    } else {
+      // Use manual brightness setting
+      vfd.setBrightness(sysSetupStruc.displayBrightness);
+    }
+
     if (!screeenUpdateRestricted)
     {
-
-      vfd.writeSpecialCharPlase(IV18_CHAR_DOT, blinkingDot);
-      #if defined(USE_PREDEFINED_SCREEN)
-        vfd.writeString(timeStr, 0);
-      #else
-        vfd.writeStringUniverslaChrTab(timeStr, 1);
-      #endif
+      if (millis() - screenSwitchTimer > (sysSetupStruc.displayFormatTime[currentScreenIndex] * 1000)) {
+        screenSwitchTimer = millis();
+        
+        int startIndex = currentScreenIndex;
+        do {
+          currentScreenIndex = (currentScreenIndex + 1) % 3;
+        } while (!sysSetupStruc.displayFormatEnable[currentScreenIndex] && currentScreenIndex != startIndex);
+      }
+      
+      if (sysSetupStruc.displayFormatEnable[currentScreenIndex] && strlen(sysSetupStruc.displayFormat[currentScreenIndex]) > 0) {
+        String displayText = parseDisplayFormat(String(sysSetupStruc.displayFormat[currentScreenIndex]), timeinfo);
+        
+        vfd.blinkState(sysSetupStruc.displayFormatBlink[currentScreenIndex] ? blinkingDot : 0);
+        #if defined(USE_PREDEFINED_SCREEN)
+          vfd.writeString(displayText.c_str(), 0);
+        #else
+          vfd.writeStringUniverslaChrTab(displayText.c_str(), 0);
+        #endif
+      }
     }
   }
 
@@ -315,7 +442,6 @@ void loop()
   WiFiClient client = serverConfigured.available(); // Очікуємо нових клієнтів
   if (client)
   {
-    // Serial.println("New Client.");
     String currentLine = "";
     String header = "";
     while (client.connected())
@@ -323,52 +449,90 @@ void loop()
       if (client.available())
       {
         char c = client.read();
-        Serial.write(c);
         header += c;
 
         if (c == '\n')
         {
           if (currentLine.length() == 0)
           {
-            if (header.indexOf("GET /settings") >= 0)
+            if (header.indexOf("GET /") >= 0){
+              int endOfFirstLine = header.indexOf('\r');
+              if (endOfFirstLine == -1) endOfFirstLine = header.indexOf('\n');
+              String requestLine = header.substring(0, endOfFirstLine);
+              Serial.println(requestLine);
+            }
+            if (header.indexOf("GET /cmd=GET:SETTINGS?") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
-              client.println("Content-type:application/json");
-              client.println("Connection: close");
-              client.println();
+  client.println("Content-type:application/json");
+  client.println("Connection: close");
+  client.println();
 
-              StaticJsonDocument<500> jsonDoc;
-              jsonDoc["ntpServer"] = sysSetupStruc.ntpServerIndex;
-              jsonDoc["demoConf"] = sysSetupStruc.screenDemoMode;
-              jsonDoc["timezone"] = sysSetupStruc.ntpTimeZone;
-              jsonDoc["manualTime"] = sysSetupStruc.ntpEN ? "on" : "off";
-              jsonDoc["datetime"] = "";
-              char colorBuffer[10];
-              sprintf(colorBuffer, "#%02X%02X%02X", sysSetupStruc.ambLightColr[0], sysSetupStruc.ambLightColr[1], sysSetupStruc.ambLightColr[2]);
-              jsonDoc["ambiLightColor"] = colorBuffer;
-              jsonDoc["brightness"] = sysSetupStruc.ambLightBrightness;
-              jsonDoc["ambiLight"] = sysSetupStruc.ambLightEnable ? "on" : "off";
-              String jsonResponse;
-              serializeJson(jsonDoc, jsonResponse);
-              client.println(jsonResponse);
+  StaticJsonDocument<1024> jsonDoc;
+  
+  JsonObject wifi = jsonDoc.createNestedObject("wifi");
+  wifi["ssid"] = sysSetupStruc.ssid;
+  wifi["security"] = 0; // WPA2
+  
+  JsonObject ntp = jsonDoc.createNestedObject("ntp");
+  ntp["server"] = sysSetupStruc.ntpServerIndex;
+  ntp["enabled"] = sysSetupStruc.ntpEN ? true : false;
+  
+  jsonDoc["timezone"] = sysSetupStruc.ntpTimeZone;
+  JsonArray formats = jsonDoc.createNestedArray("formats");
+  for (int i = 0; i < 3; i++) {
+    JsonObject format = formats.createNestedObject();
+    format["text"] = sysSetupStruc.displayFormat[i];
+    format["time"] = sysSetupStruc.displayFormatTime[i];
+    format["enabled"] = sysSetupStruc.displayFormatEnable[i];
+    format["blink"] = sysSetupStruc.displayFormatBlink[i];
+  }
+  
+  JsonObject blink = jsonDoc.createNestedObject("blink");
+  char maskStr[16];
+  sprintf(maskStr, "0x%X", sysSetupStruc.blinkMask);
+  blink["mask"] = maskStr;
+  blink["position"] = sysSetupStruc.blinkPosition;
+
+  JsonObject sensors = jsonDoc.createNestedObject("sensors");
+  sensors["pressure"] = sysSetupStruc.sensorPressure;
+  sensors["temperature"] = sysSetupStruc.sensorTemperature;
+  sensors["autobrightness"] = sysSetupStruc.sensorAutoBrightness;
+  sensors["weatherapi"] = sysSetupStruc.sensorWeatherApi;
+  sensors["currency"] = sysSetupStruc.sensorCurrency;
+  
+  JsonObject display = jsonDoc.createNestedObject("display");
+  display["brightness"] = sysSetupStruc.displayBrightness;
+
+  JsonObject led = jsonDoc.createNestedObject("led");
+  
+  JsonObject ledColor = led.createNestedObject("color");
+  ledColor["r"] = sysSetupStruc.ambLightColr[0];
+  ledColor["g"] = sysSetupStruc.ambLightColr[1];
+  ledColor["b"] = sysSetupStruc.ambLightColr[2];
+  
+  led["brightness"] = sysSetupStruc.ambLightBrightness;
+  led["count"] = sysSetupStruc.ledCount;
+  led["effect"] = sysSetupStruc.ledEffect;
+  
+  String jsonResponse;
+  serializeJson(jsonDoc, jsonResponse);
+  client.println(jsonResponse);
             }
             else if (header.indexOf("POST /cmd=FIRMWARE") >= 0)
             {
-              // OTA оновлення прошивки
               Serial.println("Starting OTA firmware update...");
               
-              // Витягуємо розмір файлу з заголовка
               int contentLength = 0;
               int headerStart = header.indexOf("Content-Length: ");
               if (headerStart != -1) {
-                headerStart += 16; // Довжина "Content-Length: "
+                headerStart += 16; 
                 int headerEnd = header.indexOf('\r', headerStart);
                 if (headerEnd == -1) headerEnd = header.indexOf('\n', headerStart);
                 String lengthStr = header.substring(headerStart, headerEnd);
                 contentLength = lengthStr.toInt();
               }
-              
-              // Читаємо заголовки до порожнього рядка
+
               while (client.connected()) {
                 String line = client.readStringUntil('\n');
                 if (line == "\r" || line.length() == 0) break;
@@ -379,7 +543,6 @@ void loop()
               Serial.println(" bytes");
               
               if (contentLength > 0) {
-                // Починаємо OTA update
                 if (!Update.begin(contentLength)) {
                   Serial.println("Not enough space for OTA update");
                   client.println("HTTP/1.1 500 Internal Server Error");
@@ -388,7 +551,6 @@ void loop()
                   client.println();
                   client.println("Not enough space");
                 } else {
-                  // Читаємо та записуємо просливку
                   size_t written = 0;
                   uint8_t buffer[512];
                   
@@ -405,7 +567,6 @@ void loop()
                       
                       written += bytesRead;
                       
-                      // Виводимо прогрес
                       if (written % 10240 == 0 || written == contentLength) {
                         Serial.print("Progress: ");
                         Serial.print((written * 100) / contentLength);
@@ -460,10 +621,8 @@ void loop()
             }
             else if (header.indexOf("POST /cmd=LOAD") >= 0)
             {
-              // Завантаження customCharData від користувача
               Serial.println("Receiving character table data...");
               
-              // Читаємо заголовки до порожнього рядка
               while (client.available() && currentLine.length() > 0) {
                 char c = client.read();
                 if (c == '\n') {
@@ -474,7 +633,6 @@ void loop()
                 }
               }
               
-              // Читаємо бінарні дані (384 байти = 96 * sizeof(uint32_t))
               uint8_t* dataPtr = (uint8_t*)sysSetupStruc.customCharData;
               int bytesRead = 0;
               int expectedBytes = sizeof(sysSetupStruc.customCharData);
@@ -487,7 +645,6 @@ void loop()
               }
               
               if (bytesRead == expectedBytes) {
-                // Копіюємо в глобальний customCharData та зберігаємо в EEPROM
                 memcpy(customCharData, sysSetupStruc.customCharData, sizeof(customCharData));
                 EEPROM.put(0, sysSetupStruc);
                 EEPROM.commit();
@@ -563,7 +720,6 @@ void loop()
               }
               EEPROM.put(0, sysSetupStruc);
               EEPROM.commit();
-              // sysSetupUpdate(sysSetupStruc);
               client.println("HTTP/1.1 200 OK");
               client.println("Content-type:text/plain");
               client.println("Connection: close");
@@ -572,13 +728,11 @@ void loop()
             }
             else if(header.indexOf("GET /chargen") >= 0)
             {
-              //send page charGen to client
               client.println("HTTP/1.1 200 OK");
               client.println("Content-type:text/html");
               client.println("Connection: close");
               client.println();
               
-              // Відправити порціями по 1024 байта
               const char* ptr = charGen;
               size_t len = strlen(charGen);
               const size_t chunkSize = 1024;
@@ -587,10 +741,9 @@ void loop()
                 client.write((const uint8_t*)ptr, toSend);
                 ptr += toSend;
                 len -= toSend;
-                delay(1); // Невелика затримка для стабільності
+                delay(1); 
               }
             }
-            //GET /styles.css
             else if(header.indexOf("GET /styles.css") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
@@ -598,7 +751,6 @@ void loop()
               client.println("Connection: close");
               client.println();
               
-              // Відправити порціями
               const char* ptr = commonStyles;
               size_t len = strlen(commonStyles);
               const size_t chunkSize = 1024;
@@ -610,15 +762,12 @@ void loop()
                 delay(1);
               }
             }
-            //GET /commonRest.js
             else if(header.indexOf("GET /commonRest.js") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
               client.println("Content-type:text/javascript");
               client.println("Connection: close");
               client.println();
-              
-              // Відправити порціями
               const char* ptr = commonRest;
               size_t len = strlen(commonRest);
               const size_t chunkSize = 1024;
@@ -640,8 +789,6 @@ void loop()
               client.println();
               client.write(favicon_ico, sizeof(favicon_ico));
             }
-            //GET /cmd=GET_DEVICE_INFO
-            //Ansver: "192.168.1.99,80,8080,Sample Server,0,0,34,49,READY"
             else if(header.indexOf("GET /cmd=GET_DEVICE_INFO") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
@@ -659,7 +806,6 @@ void loop()
                                   "READY";
               client.println(deviceInfo);
             }
-            //GET /cmd=DUMP? - вивантаження customCharData як бінарних даних
             else if(header.indexOf("GET /cmd=DUMP?") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
@@ -668,30 +814,21 @@ void loop()
               client.println("Connection: close");
               client.println();
               
-              // Відправляємо customCharData як бінарні дані (96 uint32_t = 384 байти)
               client.write((const uint8_t*)sysSetupStruc.customCharData, sizeof(sysSetupStruc.customCharData));
               
               Serial.println("Custom character table dumped (384 bytes)");
             }
             else if(header.indexOf("GET /cmd=SEG?") >= 0){
-              //return - "x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,dp,g,f,e,d,c,a,b"
               client.println("HTTP/1.1 200 OK");
               client.println("Content-type:text/plain");
               client.println("Connection: close");
               client.println();
-  
-              // Формуємо рядок з segmentsBitMask
               String dumpData = "";
-              
-              // Перевіряємо, чи масив ініційований (перший байт не 0xFF)
               if (sysSetupStruc.segmentsBitMask[0] == 0xFF) {
-                // EEPROM не ініційована - повертаємо дефолтний шаблон
                 dumpData = "x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,dp,g,f,e,d,c,b,a";
               } else {
-                // Повертаємо збережені дані
                 for (int i = 0; i < 96 && sysSetupStruc.segmentsBitMask[i] != '\0'; i++) {
                   char byte = (char)sysSetupStruc.segmentsBitMask[i];
-                  // Замінюємо 0xFF на 'x'
                   if ((uint8_t)byte == 0xFF) {
                     dumpData += 'x';
                   } else {
@@ -705,9 +842,6 @@ void loop()
   
               client.println(dumpData);
             }
-            // handler co,,and - /cmd=SEG=x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,a,b,c,d,e,f,g,dp
-            // parce to uint8_t segmentsBitMask[96];
-            // convert string to byte array and save to sysSetupStruc.segmentsBitMask
             
             else if(header.indexOf("GET /cmd=SEG=") >= 0){
               int paramStart = header.indexOf("GET /cmd=SEG=") + strlen("GET /cmd=SEG=");
@@ -717,18 +851,14 @@ void loop()
               Serial.print("Received SEG command with params: ");
               Serial.println(params);
               
-              // Копіюємо весь рядок посимвольно (включаючи коми)
               int len = params.length();
-              if (len > 95) len = 95; // Обмежуємо довжину
-              
+              if (len > 95) len = 95; 
               for (int i = 0; i < len; i++) {
                 sysSetupStruc.segmentsBitMask[i] = (uint8_t)params[i];
               }
-              
-              // Додаємо null-термінатор після останнього байта
+
               sysSetupStruc.segmentsBitMask[len] = '\0';
-  
-              // Зберігаємо в EEPROM
+
               EEPROM.put(0, sysSetupStruc);
               EEPROM.commit();
   
@@ -751,7 +881,6 @@ void loop()
               client.println();
               client.println("Switched to CLOCK mode");
             }
-            //GET /cmd=RESTART
             else if (header.indexOf("GET /cmd=RESTART") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
@@ -762,16 +891,14 @@ void loop()
               delay(1000);
               ESP.restart();
             }
-            //GET /cmd=TEXT 1234567890
-            //display text "1234567890" on VFD
+
             else if (header.indexOf("GET /cmd=TEXT") >= 0)
             {
               screeenUpdateRestricted = true;
               int paramStart = header.indexOf("GET /cmd=TEXT") + strlen("GET /cmd=TEXT");
               String textToDisplay = header.substring(paramStart, header.indexOf(" ", paramStart));
               textToDisplay.trim();
-              
-              // Пропустити початковий пробіл або інші символи
+
               if (textToDisplay.startsWith("%20") || textToDisplay.startsWith(" ")) {
                 textToDisplay = textToDisplay.substring(textToDisplay.startsWith("%20") ? 3 : 1);
               }
@@ -787,10 +914,7 @@ void loop()
               client.println();
               client.println("Text displayed");
             }
-            //GET /cmd=CHARSET,1,20,0000DF
-            //1(0x01) - position (ignore this parameter)
-            //20(0x20) - ascii code ()
-            //0000DF(0x0000DF) - 3 bytes of used segments
+
             else if (header.indexOf("GET /cmd=CHARSET") >= 0)
             {
               screeenUpdateRestricted = true;
@@ -798,7 +922,6 @@ void loop()
               String params = header.substring(paramStart, header.indexOf(" ", paramStart));
               params.trim();
               
-              // Пропустити початкову кому
               if (params.startsWith(",")) {
                 params = params.substring(1);
               }
@@ -821,7 +944,6 @@ void loop()
                 Serial.println(segStr);
                 vfd.setCharToCustomTable(asciiCode, segments);
                 
-                // Зберегти customCharData в EEPROM
                 memcpy(sysSetupStruc.customCharData, customCharData, sizeof(customCharData));
                 EEPROM.put(0, sysSetupStruc);
                 EEPROM.commit();
@@ -842,8 +964,6 @@ void loop()
               }
             }
 
-
-            //return index page
             else if (header.indexOf("GET / ") >= 0)
             {
               client.println("HTTP/1.1 200 OK");
@@ -851,7 +971,6 @@ void loop()
               client.println("Connection: close");
               client.println();
               
-              // Відправити порціями
               const char* ptr = index_html;
               size_t len = strlen(index_html);
               const size_t chunkSize = 1024;
@@ -863,10 +982,7 @@ void loop()
                 delay(1);
               }
             }
-            //GET /cmd=CHARTEST,0,20,020000
-            //0(0x00) - start position
-            //20(0x20) - ascii code
-            //020000(0x020000) - 3 bytes of used segments
+
             else if (header.indexOf("GET /cmd=CHARTEST") >= 0)
             {
               screeenUpdateRestricted = true;
@@ -874,7 +990,6 @@ void loop()
               String params = header.substring(paramStart, header.indexOf(" ", paramStart));
               params.trim();
               
-              // Пропустити початкову кому
               if (params.startsWith(",")) {
                 params = params.substring(1);
               }
@@ -912,14 +1027,489 @@ void loop()
                 client.println("Invalid parameters");
               }
             }
+            else if (header.indexOf("POST /cmd=WIFI:SAVE=") >= 0)
+            {
+              int paramStart = header.indexOf("POST /cmd=WIFI:SAVE=") + strlen("POST /cmd=WIFI:SAVE=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              params = urlDecode(params);
+              
+              int firstComma = params.indexOf(",");
+              int secondComma = params.indexOf(",", firstComma + 1);
+              
+              if (firstComma != -1 && secondComma != -1)
+              {
+                String ssid = params.substring(0, firstComma);
+                String password = params.substring(firstComma + 1, secondComma);
+                String security = params.substring(secondComma + 1);
+                
+                ssid.toCharArray(sysSetupStruc.ssid, sizeof(sysSetupStruc.ssid));
+                password.toCharArray(sysSetupStruc.pass, sizeof(sysSetupStruc.pass));
+                
+                EEPROM.put(0, sysSetupStruc);
+                EEPROM.commit();
+                
+                Serial.println("WiFi settings saved");
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("WiFi settings saved");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid parameters");
+              }
+            }
+            else if (header.indexOf("GET /cmd=DATETIME,") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=DATETIME,") + strlen("GET /cmd=DATETIME,");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              int year, month, day, hour, minute, second;
+              if (sscanf(params.c_str(), "%d,%d,%d,%d,%d,%d", &year, &month, &day, &hour, &minute, &second) == 6)
+              {
+                struct tm manualTime;
+                manualTime.tm_year = year - 1900;
+                manualTime.tm_mon = month - 1;
+                manualTime.tm_mday = day;
+                manualTime.tm_hour = hour;
+                manualTime.tm_min = minute;
+                manualTime.tm_sec = second;
+                
+                time_t t = mktime(&manualTime);
+                struct timeval now = { .tv_sec = t };
+                settimeofday(&now, NULL);
+                
+                Serial.println("Manual time set");
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Time set successfully");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid date format");
+              }
+            }
+            else if (header.indexOf("GET /cmd=NTP:SERVER=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=NTP:SERVER=") + strlen("GET /cmd=NTP:SERVER=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.ntpServerIndex = value.toInt();
+              configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("NTP server set to: ");
+              Serial.println(sysSetupStruc.ntpServerIndex);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("NTP server updated");
+            }
+            else if (header.indexOf("GET /cmd=TIMEZONE=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=TIMEZONE=") + strlen("GET /cmd=TIMEZONE=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.ntpTimeZone = value.toInt();
+              timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
+              configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Timezone set to: ");
+              Serial.println(sysSetupStruc.ntpTimeZone);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Timezone updated");
+            }
+            else if (header.indexOf("GET /cmd=DISPLAY:SCREEN1=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=DISPLAY:SCREEN1=") + strlen("GET /cmd=DISPLAY:SCREEN1=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              params = urlDecode(params);
+              
+              int comma1 = params.indexOf(",");
+              int comma2 = params.indexOf(",", comma1 + 1);
+              int comma3 = params.indexOf(",", comma2 + 1);
+              
+              if (comma1 != -1 && comma2 != -1 && comma3 != -1)
+              {
+                String format = params.substring(0, comma1);
+                format.toCharArray(sysSetupStruc.displayFormat[0], sizeof(sysSetupStruc.displayFormat[0]));
+                sysSetupStruc.displayFormatTime[0] = params.substring(comma1 + 1, comma2).toInt();
+                sysSetupStruc.displayFormatEnable[0] = params.substring(comma2 + 1, comma3).toInt();
+                sysSetupStruc.displayFormatBlink[0] = params.substring(comma3 + 1).toInt();
+                
+                EEPROM.put(0, sysSetupStruc);
+                EEPROM.commit();
+                
+                Serial.println("Display Screen 1 settings saved");
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Screen 1 updated");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid parameters");
+              }
+            }
+            else if (header.indexOf("GET /cmd=DISPLAY:SCREEN2=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=DISPLAY:SCREEN2=") + strlen("GET /cmd=DISPLAY:SCREEN2=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              params = urlDecode(params);
+              
+              int comma1 = params.indexOf(",");
+              int comma2 = params.indexOf(",", comma1 + 1);
+              int comma3 = params.indexOf(",", comma2 + 1);
+              
+              if (comma1 != -1 && comma2 != -1 && comma3 != -1)
+              {
+                String format = params.substring(0, comma1);
+                format.toCharArray(sysSetupStruc.displayFormat[1], sizeof(sysSetupStruc.displayFormat[1]));
+                sysSetupStruc.displayFormatTime[1] = params.substring(comma1 + 1, comma2).toInt();
+                sysSetupStruc.displayFormatEnable[1] = params.substring(comma2 + 1, comma3).toInt();
+                sysSetupStruc.displayFormatBlink[1] = params.substring(comma3 + 1).toInt();
+                
+                EEPROM.put(0, sysSetupStruc);
+                EEPROM.commit();
+                
+                Serial.println("Display Screen 2 settings saved");
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Screen 2 updated");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid parameters");
+              }
+            }
+            else if (header.indexOf("GET /cmd=DISPLAY:SCREEN3=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=DISPLAY:SCREEN3=") + strlen("GET /cmd=DISPLAY:SCREEN3=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              params = urlDecode(params);
+              
+              int comma1 = params.indexOf(",");
+              int comma2 = params.indexOf(",", comma1 + 1);
+              int comma3 = params.indexOf(",", comma2 + 1);
+              
+              if (comma1 != -1 && comma2 != -1 && comma3 != -1)
+              {
+                String format = params.substring(0, comma1);
+                format.toCharArray(sysSetupStruc.displayFormat[2], sizeof(sysSetupStruc.displayFormat[2]));
+                sysSetupStruc.displayFormatTime[2] = params.substring(comma1 + 1, comma2).toInt();
+                sysSetupStruc.displayFormatEnable[2] = params.substring(comma2 + 1, comma3).toInt();
+                sysSetupStruc.displayFormatBlink[2] = params.substring(comma3 + 1).toInt();
+                
+                EEPROM.put(0, sysSetupStruc);
+                EEPROM.commit();
+                
+                Serial.println("Display Screen 3 settings saved");
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Screen 3 updated");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid parameters");
+              }
+            }
+            else if (header.indexOf("GET /cmd=BLINK:POINT=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=BLINK:POINT=") + strlen("GET /cmd=BLINK:POINT=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              int comma = params.indexOf(",");
+              if (comma != -1)
+              {
+                String maskStr = params.substring(0, comma);
+                String posStr = params.substring(comma + 1);
+                
+                sysSetupStruc.blinkMask = strtoul(maskStr.c_str(), NULL, 16);
+                sysSetupStruc.blinkPosition = posStr.toInt();
+                vfd.setBlinkCharData(sysSetupStruc.blinkMask, sysSetupStruc.blinkPosition);
+                EEPROM.put(0, sysSetupStruc);
+
+                EEPROM.commit();
+                
+                Serial.print("Blink mask: 0x");
+                Serial.print(sysSetupStruc.blinkMask, HEX);
+                Serial.print(", position: ");
+                Serial.println(sysSetupStruc.blinkPosition);
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Blink settings updated");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid parameters");
+              }
+            }
+            else if (header.indexOf("GET /cmd=SENSOR:PRESSURE=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=SENSOR:PRESSURE=") + strlen("GET /cmd=SENSOR:PRESSURE=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.sensorPressure = (value.toInt() == 1);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Pressure sensor: ");
+              Serial.println(sysSetupStruc.sensorPressure ? "ON" : "OFF");
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Pressure sensor updated");
+            }
+            else if (header.indexOf("GET /cmd=SENSOR:TEMPERATURE=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=SENSOR:TEMPERATURE=") + strlen("GET /cmd=SENSOR:TEMPERATURE=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.sensorTemperature = (value.toInt() == 1);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Temperature sensor: ");
+              Serial.println(sysSetupStruc.sensorTemperature ? "ON" : "OFF");
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Temperature sensor updated");
+            }
+            else if (header.indexOf("GET /cmd=SENSOR:AUTOBRIGHTNESS=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=SENSOR:AUTOBRIGHTNESS=") + strlen("GET /cmd=SENSOR:AUTOBRIGHTNESS=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.sensorAutoBrightness = (value.toInt() == 1);
+              
+              if (sysSetupStruc.sensorAutoBrightness) {
+                time_t now;
+                time(&now);
+                struct tm timeinfo;
+                localtime_r(&now, &timeinfo);
+                int hour = timeinfo.tm_hour;
+                
+                vfd.setBrightness((hour >= 21 || hour < 7) ? 1 : 7);
+              } else {
+                vfd.setBrightness(sysSetupStruc.displayBrightness);
+              }
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Auto brightness: ");
+              Serial.println(sysSetupStruc.sensorAutoBrightness ? "ON" : "OFF");
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Auto brightness updated");
+            }
+            else if (header.indexOf("GET /cmd=SENSOR:WEATHERAPI=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=SENSOR:WEATHERAPI=") + strlen("GET /cmd=SENSOR:WEATHERAPI=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.sensorWeatherApi = (value.toInt() == 1);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Weather API: ");
+              Serial.println(sysSetupStruc.sensorWeatherApi ? "ON" : "OFF");
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Weather API updated");
+            }
+            else if (header.indexOf("GET /cmd=SENSOR:CURRENCY=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=SENSOR:CURRENCY=") + strlen("GET /cmd=SENSOR:CURRENCY=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.sensorCurrency = (value.toInt() == 1);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Currency: ");
+              Serial.println(sysSetupStruc.sensorCurrency ? "ON" : "OFF");
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Currency updated");
+            }
+            else if (header.indexOf("GET /cmd=LED:COLOR=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=LED:COLOR=") + strlen("GET /cmd=LED:COLOR=");
+              String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              int r, g, b;
+              if (sscanf(params.c_str(), "%d,%d,%d", &r, &g, &b) == 3)
+              {
+                sysSetupStruc.ambLightColr[0] = r;
+                sysSetupStruc.ambLightColr[1] = g;
+                sysSetupStruc.ambLightColr[2] = b;
+                
+                EEPROM.put(0, sysSetupStruc);
+                EEPROM.commit();
+                
+                Serial.print("LED color: R=");
+                Serial.print(r);
+                Serial.print(", G=");
+                Serial.print(g);
+                Serial.print(", B=");
+                Serial.println(b);
+                
+                client.println("HTTP/1.1 200 OK");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("LED color updated");
+              }
+              else
+              {
+                client.println("HTTP/1.1 400 Bad Request");
+                client.println("Content-type:text/plain");
+                client.println("Connection: close");
+                client.println();
+                client.println("Invalid color format");
+              }
+            }
+            else if (header.indexOf("GET /cmd=DISPLAY:BRIGHTNESS=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=DISPLAY:BRIGHTNESS=") + strlen("GET /cmd=DISPLAY:BRIGHTNESS=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+
+              int brightness = constrain(value.toInt(), 0, 7);
+              sysSetupStruc.displayBrightness = brightness;
+
+              if (!sysSetupStruc.sensorAutoBrightness) {
+                vfd.setBrightness(brightness);
+              }
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("Display brightness: ");
+              Serial.println(sysSetupStruc.displayBrightness);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("Display brightness updated");
+            }
+            else if (header.indexOf("GET /cmd=LED:COUNT=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=LED:COUNT=") + strlen("GET /cmd=LED:COUNT=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.ledCount = value.toInt();
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("LED count: ");
+              Serial.println(sysSetupStruc.ledCount);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("LED count updated");
+            }
+
+            else if (header.indexOf("GET /cmd=LED:EFFECT=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=LED:EFFECT=") + strlen("GET /cmd=LED:EFFECT=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.ledEffect = value.toInt();
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("LED effect: ");
+              Serial.println(sysSetupStruc.ledEffect);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("LED effect updated");
+            }
             //return 404 not found
-            //else{
-            //  client.println("HTTP/1.1 404 Not Found");
-            //  client.println("Content-type:text/plain");
-            //  client.println("Connection: close");
-            //  client.println();
-            // client.println("404 Not Found");
-            //}
+            else{
+              client.println("HTTP/1.1 404 Not Found");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+             client.println("404 Not Found");
+            }
             break;
           }
           else
