@@ -4,6 +4,7 @@
 #include <HTTPClient.h>
 #include <NTPClient.h>
 #include <ArduinoJson.h>
+#include <DNSServer.h>
 #include "dto.h"
 #include "pt63xx.h"
 #include <sys/time.h>
@@ -15,24 +16,53 @@
 #include <time.h>
 #include <esp_task_wdt.h>
 #include <Update.h>
+#include "FastLED.h"
+#include <Wire.h>
+#include "RV8803.h"
+#include "HDC2010.h"
+
 
 #define LED_HTTP 16
 #define LED_WIFI 17
 #define INV_ENABLE 21
-
+#define LED_STRIP_MAX_NUM_LEDS 16
+#define LED_STRIP_PIN 33
 #define USR_BTN 4
 #define VFD_EN
 
+// I2C pins
+#define I2C_SDA 23
+#define I2C_SCL 22
 
-//#define USE_PREDEFINED_SCREEN
 
 PT63XX vfd(27, IV18);
+CRGB leds[LED_STRIP_MAX_NUM_LEDS];
+
+// RTC and sensors
+RV8803 rtc;
+HDC2010 tempHumiditySensor;
+bool rtcAvailable = false;
+bool tempSensorAvailable = false;
 
 // Змінні для зберігання часу
 struct tm timeinfo;
 bool blinkingDot = false;
 SystemSetup sysSetupStruc;
 
+// Offline mode and AP mode variables
+bool offlineMode = false;
+bool apModeActive = false;
+DNSServer dnsServerAP;
+
+// System state for LED indication
+enum SystemState {
+  STATE_NORMAL,           // Normal operation - use user selected effect
+  STATE_WIFI_CONNECTING,  // Connecting to WiFi - chase animation
+  STATE_WIFI_FAILED,      // WiFi connection failed - red pulse
+  STATE_AP_MODE,          // AP mode active - blue pulse
+  STATE_SCANNING          // Scanning networks - orange blink
+};
+SystemState systemState = STATE_NORMAL;
 
 WiFiServer serverConfigured(80);
 WiFiUDP ntpUDP;
@@ -139,6 +169,42 @@ String urlDecode(String str) {
 }
 
 
+void updateLEDEffect();
+void startAPMode();
+void updateSensors();
+void syncRTCTime();
+
+// I2C scanner function for diagnostics
+void scanI2C() {
+  Serial.println("\n=== I2C Scanner ===");
+  Serial.println("Scanning I2C bus...");
+  
+  byte count = 0;
+  for (byte address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    byte error = Wire.endTransmission();
+    
+    if (error == 0) {
+      Serial.print("I2C device found at address 0x");
+      if (address < 16) Serial.print("0");
+      Serial.print(address, HEX);
+      Serial.print(" (");
+      Serial.print(address);
+      Serial.println(")");
+      count++;
+    }
+  }
+  
+  if (count == 0) {
+    Serial.println("No I2C devices found!");
+  } else {
+    Serial.print("Found ");
+    Serial.print(count);
+    Serial.println(" device(s)");
+  }
+  Serial.println("==================\n");
+}
+
 void initDefaultConfig()
 {
 
@@ -183,7 +249,7 @@ void initDefaultConfig()
   sysSetupStruc.ambLightColr[2] = 80;  // b
   sysSetupStruc.ambLightBrightness = 255;
   sysSetupStruc.ledCount = 4;
-  sysSetupStruc.ledEffect = 1;
+  sysSetupStruc.ledEffect = 0;  // Default to Solid Color
   
   sysSetupStruc.FirstStart = 55;
   
@@ -198,6 +264,11 @@ void setup()
   pinMode(INV_ENABLE, OUTPUT);
   digitalWrite(INV_ENABLE, LOW); // Enable inverter power
   pinMode(USR_BTN, INPUT_PULLUP);
+  pinMode(LED_STRIP_PIN, OUTPUT);
+  
+  // Initialize I2C
+  Wire.begin(I2C_SDA, I2C_SCL);
+  Wire.setClock(100000); // 100kHz for stability
 
   sysSetupStruc.ntpServerIndex = 0;
   sysSetupStruc.ntpTimeZone = 0;
@@ -221,6 +292,31 @@ void setup()
   
   memcpy(customCharData, sysSetupStruc.customCharData, sizeof(customCharData));
 
+  // Scan I2C bus for diagnostics
+  scanI2C();
+
+  // Initialize RTC if enabled in config
+  Serial.print("Initializing RTC... ");
+  rtcAvailable = rtc.begin(Wire);
+  if (rtcAvailable) {
+    Serial.println("OK");
+    // Load time from RTC on startup
+    rtc.updateSystemTime();
+  } else {
+    Serial.println("Not found");
+  }
+  
+  // Initialize temperature/humidity sensor if enabled in config
+  if (sysSetupStruc.sensorTemperature) {
+    Serial.print("Initializing HDC2010... ");
+    tempSensorAvailable = tempHumiditySensor.begin(Wire);
+    if (tempSensorAvailable) {
+      Serial.println("OK");
+    } else {
+      Serial.println("Not found");
+    }
+  }
+
   if (digitalRead(USR_BTN) == LOW)
   {
     sysSetupStruc.FirstStart = 1;
@@ -230,32 +326,27 @@ void setup()
   {
     Serial.println("First start detected. Initializing default configuration...");
     initDefaultConfig();
-    
     digitalWrite(LED_HTTP, HIGH);
-    #if defined(USE_PREDEFINED_SCREEN)
-      vfd.writeString("Conf", 1);
-    #else
-      vfd.writeStringUniverslaChrTab("Conf", 1);
-    #endif
-    ClientSetup();
+    vfd.writeStringUniverslaChrTab("Conf", 1);
+    offlineMode = true;
+    systemState = STATE_AP_MODE;
   }
+  FastLED.addLeds<WS2811, LED_STRIP_PIN, GRB>(leds, sysSetupStruc.ledCount).setCorrection( TypicalLEDStrip );
+  FastLED.setBrightness(sysSetupStruc.ambLightBrightness);
 
-  #if defined(USE_PREDEFINED_SCREEN)
-    vfd.writeString("HELLO", 1);
-  #else
-    vfd.writeStringUniverslaChrTab("HELLO", 1);
-  #endif
+  updateLEDEffect();
+  vfd.writeStringUniverslaChrTab("HELLO", 1);
   Serial.println("System Setup Data:");
   Serial.print("FirstStart: ");
   Serial.println(sysSetupStruc.FirstStart);
   Serial.print("SSID: ");
   Serial.println(sysSetupStruc.ssid);
   Serial.print("SSID LENGTH:  ");
-  Serial.println(sizeof(sysSetupStruc.ssid));
+  Serial.println(strlen(sysSetupStruc.ssid));
   Serial.print("PASS: ");
   Serial.println(sysSetupStruc.pass);
   Serial.print("PASS LENGTH:  ");
-  Serial.println(sizeof(sysSetupStruc.pass));
+  Serial.println(strlen(sysSetupStruc.pass));
   digitalWrite(LED_HTTP, LOW);
 
   for (int i = 0; i < 3; i++)
@@ -269,6 +360,9 @@ void setup()
   Serial.println("Connecting to WiFi...");
   digitalWrite(LED_WIFI, HIGH);
 
+  // Set LED state to connecting
+  systemState = STATE_WIFI_CONNECTING;
+  
   WiFi.mode(WIFI_STA);
   WiFi.begin(sysSetupStruc.ssid, sysSetupStruc.pass);
 
@@ -277,6 +371,7 @@ void setup()
 
   while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts)
   {
+    updateLEDEffect(); // Update LED animation during connection
     delay(500);
     Serial.print(".");
     attempts++;
@@ -287,11 +382,21 @@ void setup()
     Serial.println("\nWiFi connection failed! Starting AP mode...");
     digitalWrite(LED_WIFI, LOW);
     digitalWrite(LED_HTTP, HIGH);
-    ClientSetup();
+    offlineMode = true;
+    systemState = STATE_AP_MODE;
+    startAPMode();
+    
+    // If RTC is available, use it for time in offline mode
+    if (rtcAvailable) {
+      rtc.updateSystemTime();
+      Serial.println("Time loaded from RTC");
+    }
   }
   else
   {
     Serial.println("\nWiFi connected.");
+    offlineMode = false;
+    systemState = STATE_NORMAL; // Switch to normal operation
   }
   digitalWrite(LED_WIFI, LOW);
   digitalWrite(LED_HTTP, LOW);
@@ -304,46 +409,22 @@ void setup()
 
 
     
-  #if defined(USE_PREDEFINED_SCREEN)
-    vfd.writeString("                ", 0);
-  #else
-    vfd.writeStringUniverslaChrTab("                ", 0);
-  #endif
-    IPAddress ip = WiFi.localIP();
-    char ipPart[7];
-    
-    sprintf(ipPart, "-%d", ip[0]);
-  #if defined(USE_PREDEFINED_SCREEN)
-    vfd.writeString(ipPart, 0);
-  #else
-    vfd.writeStringUniverslaChrTab(ipPart, 0);
-  #endif
-    delay(500);
-
-    sprintf(ipPart, "-%d", ip[1]);
-  #if defined(USE_PREDEFINED_SCREEN)
-    vfd.writeString(ipPart, 0);
-  #else
-    vfd.writeStringUniverslaChrTab(ipPart, 0);
-  #endif
-    delay(500);
-    
-    sprintf(ipPart, "-%03d", ip[2]);
-  #if defined(USE_PREDEFINED_SCREEN)
-    vfd.writeString(ipPart, 0);
-  #else
-    vfd.writeStringUniverslaChrTab(ipPart, 0);
-  #endif
-    delay(500);
-    
-    sprintf(ipPart, "-%03d", ip[3]);
-  #if defined(USE_PREDEFINED_SCREEN)
-    vfd.writeString(ipPart, 0);
-  #else
-    vfd.writeStringUniverslaChrTab(ipPart, 0);
-  #endif
-    delay(500);
-
+  
+  vfd.writeStringUniverslaChrTab("                ", 0);
+  IPAddress ip = WiFi.localIP();
+  char ipPart[7];
+  sprintf(ipPart, "-%d", ip[0]);
+  vfd.writeStringUniverslaChrTab(ipPart, 0);
+  delay(500);
+  sprintf(ipPart, "-%d", ip[1]);
+  vfd.writeStringUniverslaChrTab(ipPart, 0);
+  delay(500);
+  sprintf(ipPart, "-%03d", ip[2]);
+  vfd.writeStringUniverslaChrTab(ipPart, 0);
+  delay(500);
+  sprintf(ipPart, "-%03d", ip[3]);
+  vfd.writeStringUniverslaChrTab(ipPart, 0);
+  delay(500);
   vfd.setBlinkCharData(sysSetupStruc.blinkMask, sysSetupStruc.blinkPosition);
     
 
@@ -355,6 +436,269 @@ uint32_t screenUpdateTimer = 0;
 uint32_t ntpUpdateTimer = 0;
 uint32_t ntpRequestStartTime = 0;
 bool ntpRequestInProgress = false;
+uint32_t ledUpdateTimer = 0;
+uint8_t ledAnimationPhase = 0;
+
+// LED state indication functions
+void ledIndicateWiFiConnecting() {
+  // Chase effect for WiFi connecting
+  int position = (ledAnimationPhase / 8) % 4;
+  for (int i = 0; i < 4; i++) {
+    if (i == position) {
+      leds[i] = CRGB(0, 100, 255); // Blue leading LED
+    } else if (i == (position - 1 + 4) % 4) {
+      leds[i] = CRGB(0, 30, 80); // Dimmer trail
+    } else {
+      leds[i] = CRGB(0, 0, 0);
+    }
+  }
+}
+
+void ledIndicateWiFiFailed() {
+  // Red pulsing for WiFi error
+  uint8_t brightness = beatsin8(30, 50, 255);
+  for (int i = 0; i < 4; i++) {
+    leds[i] = CRGB(brightness, 0, 0);
+  }
+}
+
+void ledIndicateAPMode() {
+  // Slow blue pulse for AP mode
+  uint8_t brightness = beatsin8(20, 30, 200);
+  for (int i = 0; i < 4; i++) {
+    leds[i] = CRGB(0, brightness / 3, brightness);
+  }
+}
+
+void ledIndicateScanning() {
+  // Fast orange blink for scanning
+  uint8_t blink = (ledAnimationPhase / 10) % 2;
+  for (int i = 0; i < 4; i++) {
+    if (blink) {
+      leds[i] = CRGB(255, 100, 0);
+    } else {
+      leds[i] = CRGB(0, 0, 0);
+    }
+  }
+}
+
+// LED Effect Functions
+void updateLEDEffect() {
+  // Update LEDs at ~50Hz for smooth animations
+  if (millis() - ledUpdateTimer < 20) {
+    return;
+  }
+  ledUpdateTimer = millis();
+  
+  // Increment animation phase (0-255)
+  ledAnimationPhase++;
+  
+  // Check if we're in a special system state
+  if (systemState != STATE_NORMAL) {
+    FastLED.setBrightness(255); // Full brightness for status indication
+    
+    switch(systemState) {
+      case STATE_WIFI_CONNECTING:
+        ledIndicateWiFiConnecting();
+        break;
+      case STATE_WIFI_FAILED:
+        ledIndicateWiFiFailed();
+        break;
+      case STATE_AP_MODE:
+        ledIndicateAPMode();
+        break;
+      case STATE_SCANNING:
+        ledIndicateScanning();
+        break;
+      default:
+        break;
+    }
+    
+    FastLED.show();
+    return;
+  }
+  
+  FastLED.setBrightness(sysSetupStruc.ambLightBrightness);
+  
+  switch(sysSetupStruc.ledEffect) {
+    case 0: // Solid Color
+      for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+        leds[i] = CRGB(sysSetupStruc.ambLightColr[0], 
+                       sysSetupStruc.ambLightColr[1], 
+                       sysSetupStruc.ambLightColr[2]);
+      }
+      break;
+      
+    case 1: // Rainbow
+      for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+        leds[i] = CHSV((ledAnimationPhase + i * (256 / sysSetupStruc.ledCount)) % 256, 255, 255);
+      }
+      break;
+      
+    case 2: // Breathing
+      {
+        uint8_t brightness = (exp(sin(ledAnimationPhase / 20.0 * PI)) - 0.36787944) * 108.0;
+        for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+          leds[i] = CRGB(
+            (sysSetupStruc.ambLightColr[0] * brightness) / 255,
+            (sysSetupStruc.ambLightColr[1] * brightness) / 255,
+            (sysSetupStruc.ambLightColr[2] * brightness) / 255
+          );
+        }
+      }
+      break;
+      
+    case 3: // Pulse
+      {
+        uint8_t pulse = beatsin8(60, 0, 255);
+        for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+          leds[i] = CRGB(
+            (sysSetupStruc.ambLightColr[0] * pulse) / 255,
+            (sysSetupStruc.ambLightColr[1] * pulse) / 255,
+            (sysSetupStruc.ambLightColr[2] * pulse) / 255
+          );
+        }
+      }
+      break;
+      
+    case 4: // Wave
+      for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+        uint8_t brightness = sin8((ledAnimationPhase * 2) + (i * 32));
+        leds[i] = CRGB(
+          (sysSetupStruc.ambLightColr[0] * brightness) / 255,
+          (sysSetupStruc.ambLightColr[1] * brightness) / 255,
+          (sysSetupStruc.ambLightColr[2] * brightness) / 255
+        );
+      }
+      break;
+      
+    case 5: // Chase
+      {
+        int position = (ledAnimationPhase / 8) % sysSetupStruc.ledCount;
+        for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+          if (i == position) {
+            leds[i] = CRGB(sysSetupStruc.ambLightColr[0], 
+                           sysSetupStruc.ambLightColr[1], 
+                           sysSetupStruc.ambLightColr[2]);
+          } else if (i == (position - 1 + sysSetupStruc.ledCount) % sysSetupStruc.ledCount) {
+            leds[i] = CRGB(sysSetupStruc.ambLightColr[0] / 4, 
+                           sysSetupStruc.ambLightColr[1] / 4, 
+                           sysSetupStruc.ambLightColr[2] / 4);
+          } else {
+            leds[i] = CRGB(0, 0, 0);
+          }
+        }
+      }
+      break;
+      
+    case 6: // Twinkle
+      {
+        static uint32_t lastTwinkle = 0;
+        if (millis() - lastTwinkle > 100) {
+          lastTwinkle = millis();
+          int led = random(sysSetupStruc.ledCount);
+          if (random(100) < 30) { // 30% chance to twinkle
+            leds[led] = CRGB(sysSetupStruc.ambLightColr[0], 
+                            sysSetupStruc.ambLightColr[1], 
+                            sysSetupStruc.ambLightColr[2]);
+          } else {
+            leds[led].fadeToBlackBy(64);
+          }
+          // Fade all LEDs slightly
+          for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+            leds[i].fadeToBlackBy(16);
+          }
+        }
+      }
+      break;
+      
+    default:
+      // Fallback to solid color
+      for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+        leds[i] = CRGB(sysSetupStruc.ambLightColr[0], 
+                       sysSetupStruc.ambLightColr[1], 
+                       sysSetupStruc.ambLightColr[2]);
+      }
+      break;
+  }
+  
+  FastLED.show();
+}
+
+// Non-blocking AP mode startup
+void startAPMode() {
+  Serial.println("Starting non-blocking AP mode...");
+  
+  // Setup AP mode (keeps existing WiFi STA mode if connected)
+  if (WiFi.status() == WL_CONNECTED) {
+    // Already connected, add AP mode
+    WiFi.mode(WIFI_AP_STA);
+  } else {
+    // Not connected, AP only
+    WiFi.mode(WIFI_AP);
+  }
+  
+  WiFi.softAP(FIRST_SETUP_AP_NAME, NULL, 3);
+  
+  // Start DNS server for captive portal
+  dnsServerAP.start(53, "*", WiFi.softAPIP());
+  
+  apModeActive = true;
+  
+  Serial.print("AP SSID: ");
+  Serial.println(FIRST_SETUP_AP_NAME);
+  Serial.print("AP IP: ");
+  Serial.println(WiFi.softAPIP());
+  Serial.println("Web interface available at: http://" + WiFi.softAPIP().toString());
+}
+
+// Update sensor readings
+void updateSensors() {
+  static uint32_t lastSensorUpdate = 0;
+  
+  // Update sensors every 10 seconds
+  if (millis() - lastSensorUpdate < 10000) {
+    return;
+  }
+  lastSensorUpdate = millis();
+  
+  // Read temperature and humidity if sensor is available and enabled
+  if (tempSensorAvailable && sysSetupStruc.sensorTemperature) {
+    float temp, hum;
+    if (tempHumiditySensor.read(temp, hum)) {
+      sensorTemp = temp;
+      sensorHum = (int)hum;
+      
+      Serial.print("Sensor: Temp=");
+      Serial.print(sensorTemp);
+      Serial.print("°C, Humidity=");
+      Serial.print(sensorHum);
+      Serial.println("%");
+    }
+  }
+}
+
+// Sync time with RTC
+void syncRTCTime() {
+  static uint32_t lastRTCSync = 0;
+  
+  // Sync with RTC every hour if available and NTP is enabled
+  if (rtcAvailable && sysSetupStruc.ntpEN) {
+    if (millis() - lastRTCSync > 3600000) {  // 1 hour
+      lastRTCSync = millis();
+      
+      // If we're online, update RTC from system time (which gets updated via NTP)
+      if (!offlineMode) {
+        rtc.setFromSystemTime();
+        Serial.println("RTC updated from system time");
+      } else {
+        // If offline, update system time from RTC
+        rtc.updateSystemTime();
+        Serial.println("System time updated from RTC");
+      }
+    }
+  }
+}
 
 void loop()
 {
@@ -402,16 +746,13 @@ void loop()
         String displayText = parseDisplayFormat(String(sysSetupStruc.displayFormat[currentScreenIndex]), timeinfo);
         
         vfd.blinkState(sysSetupStruc.displayFormatBlink[currentScreenIndex] ? blinkingDot : 0);
-        #if defined(USE_PREDEFINED_SCREEN)
-          vfd.writeString(displayText.c_str(), 0);
-        #else
-          vfd.writeStringUniverslaChrTab(displayText.c_str(), 0);
-        #endif
+        vfd.writeStringUniverslaChrTab(displayText.c_str(), 0);
       }
     }
   }
 
-  if (sysSetupStruc.ntpEN)
+  // Only update NTP if online
+  if (sysSetupStruc.ntpEN && !offlineMode)
   {
     if (millis() - ntpUpdateTimer > ntpUpdateInterval)
     {
@@ -426,6 +767,12 @@ void loop()
       
       ntpRequestInProgress = false;
       
+      // Update RTC from system time after NTP sync
+      if (rtcAvailable) {
+        rtc.setFromSystemTime();
+        Serial.println("RTC synced with NTP time");
+      }
+      
       Serial.print("Current time (NTP): ");
       Serial.println(timeClient.getFormattedTime());
       if (!getLocalTime(&timeinfo))
@@ -439,9 +786,24 @@ void loop()
     }
   }
 
+  // Update LED effects
+  updateLEDEffect();
+
+  // Update sensors
+  updateSensors();
+  
+  // Sync RTC time
+  syncRTCTime();
+
+  // Handle AP mode DNS requests if active (for captive portal)
+  if (apModeActive) {
+    dnsServerAP.processNextRequest();
+  }
+
   WiFiClient client = serverConfigured.available(); // Очікуємо нових клієнтів
   if (client)
   {
+    client.setTimeout(30000); // Set 30 second timeout for large firmware uploads
     String currentLine = "";
     String header = "";
     while (client.connected())
@@ -478,7 +840,7 @@ void loop()
   ntp["server"] = sysSetupStruc.ntpServerIndex;
   ntp["enabled"] = sysSetupStruc.ntpEN ? true : false;
   
-  jsonDoc["timezone"] = sysSetupStruc.ntpTimeZone;
+  jsonDoc["timezone"] = sysSetupStruc.ntpTimeZone-12;
   JsonArray formats = jsonDoc.createNestedArray("formats");
   for (int i = 0; i < 3; i++) {
     JsonObject format = formats.createNestedObject();
@@ -552,9 +914,11 @@ void loop()
                   client.println("Not enough space");
                 } else {
                   size_t written = 0;
-                  uint8_t buffer[512];
+                  uint8_t buffer[4096]; // Increased buffer size for faster OTA
                   
                   while (written < contentLength && client.connected()) {
+                    esp_task_wdt_reset(); // Reset watchdog during OTA
+                    
                     size_t available = client.available();
                     if (available) {
                       size_t toRead = min(available, sizeof(buffer));
@@ -573,7 +937,7 @@ void loop()
                         Serial.println("%");
                       }
                     } else {
-                      delay(1);
+                      delay(10); // Increased delay for stability
                     }
                   }
                   
@@ -803,7 +1167,7 @@ void loop()
                                   String(0) + "," +
                                   String(sysSetupStruc.screenDemoMode) + "," +
                                   String(sysSetupStruc.ntpServerIndex) + "," +
-                                  "READY";
+                                  String(offlineMode ? "OFFLINE" : "READY");
               client.println(deviceInfo);
             }
             else if(header.indexOf("GET /cmd=DUMP?") >= 0)
@@ -913,6 +1277,52 @@ void loop()
               client.println("Connection: close");
               client.println();
               client.println("Text displayed");
+            }
+
+            else if (header.indexOf("GET /cmd=WIFI:SCAN") >= 0)
+            {
+              Serial.println("Scanning WiFi networks...");
+              
+              // Set LED state to scanning
+              SystemState previousState = systemState;
+              systemState = STATE_SCANNING;
+              
+              // Set to STA+AP mode for scanning
+              WiFiMode_t currentMode = WiFi.getMode();
+              if (currentMode == WIFI_AP) {
+                WiFi.mode(WIFI_AP_STA);
+              }
+              
+              int n = WiFi.scanNetworks();
+              
+              // Restore previous state
+              systemState = previousState;
+              Serial.print("Networks found: ");
+              Serial.println(n);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:application/json");
+              client.println("Connection: close");
+              client.println();
+              
+              // Build JSON array of networks
+              client.print("[");
+              for (int i = 0; i < n; ++i) {
+                if (i > 0) client.print(",");
+                client.print("{\"ssid\":\"");
+                client.print(WiFi.SSID(i));
+                client.print("\",\"rssi\":");
+                client.print(WiFi.RSSI(i));
+                client.print(",\"secure\":");
+                client.print(WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false");
+                client.print("}");
+              }
+              client.print("]");
+              
+              // Restore previous mode
+              if (currentMode == WIFI_AP) {
+                WiFi.mode(WIFI_AP);
+              }
             }
 
             else if (header.indexOf("GET /cmd=CHARSET") >= 0)
@@ -1027,11 +1437,14 @@ void loop()
                 client.println("Invalid parameters");
               }
             }
-            else if (header.indexOf("POST /cmd=WIFI:SAVE=") >= 0)
+            else if (header.indexOf("GET /cmd=WIFI:SAVE=") >= 0)
             {
-              int paramStart = header.indexOf("POST /cmd=WIFI:SAVE=") + strlen("POST /cmd=WIFI:SAVE=");
+              int paramStart = header.indexOf("GET /cmd=WIFI:SAVE=") + strlen("GET /cmd=WIFI:SAVE=");
               String params = header.substring(paramStart, header.indexOf(" ", paramStart));
               params = urlDecode(params);
+              
+              Serial.print("WIFI:SAVE received params: ");
+              Serial.println(params);
               
               int firstComma = params.indexOf(",");
               int secondComma = params.indexOf(",", firstComma + 1);
@@ -1042,22 +1455,35 @@ void loop()
                 String password = params.substring(firstComma + 1, secondComma);
                 String security = params.substring(secondComma + 1);
                 
+                Serial.print("Saving SSID: ");
+                Serial.println(ssid);
+                Serial.print("Password length: ");
+                Serial.println(password.length());
+                
                 ssid.toCharArray(sysSetupStruc.ssid, sizeof(sysSetupStruc.ssid));
                 password.toCharArray(sysSetupStruc.pass, sizeof(sysSetupStruc.pass));
+                sysSetupStruc.FirstStart = 55;  // Mark as configured
                 
                 EEPROM.put(0, sysSetupStruc);
                 EEPROM.commit();
                 
-                Serial.println("WiFi settings saved");
+                Serial.println("WiFi settings saved to EEPROM");
                 
                 client.println("HTTP/1.1 200 OK");
                 client.println("Content-type:text/plain");
                 client.println("Connection: close");
                 client.println();
-                client.println("WiFi settings saved");
+                client.println("WiFi settings saved. Device will restart...");
+                client.flush(); // Ensure response is sent
+                client.stop();  // Close connection
+                
+                Serial.println("Restarting in 2 seconds...");
+                delay(2000);
+                ESP.restart();
               }
               else
               {
+                Serial.println("Invalid WIFI:SAVE parameters!");
                 client.println("HTTP/1.1 400 Bad Request");
                 client.println("Content-type:text/plain");
                 client.println("Connection: close");
@@ -1084,6 +1510,12 @@ void loop()
                 time_t t = mktime(&manualTime);
                 struct timeval now = { .tv_sec = t };
                 settimeofday(&now, NULL);
+                
+                // Update RTC with new time
+                if (rtcAvailable) {
+                  rtc.setFromSystemTime();
+                  Serial.println("RTC updated with manual time");
+                }
                 
                 Serial.println("Manual time set");
                 
@@ -1127,7 +1559,7 @@ void loop()
               int paramStart = header.indexOf("GET /cmd=TIMEZONE=") + strlen("GET /cmd=TIMEZONE=");
               String value = header.substring(paramStart, header.indexOf(" ", paramStart));
               
-              sysSetupStruc.ntpTimeZone = value.toInt();
+              sysSetupStruc.ntpTimeZone = value.toInt()+12;
               timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
               configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
               
@@ -1462,6 +1894,25 @@ void loop()
               client.println("Connection: close");
               client.println();
               client.println("Display brightness updated");
+            }
+            else if (header.indexOf("GET /cmd=LED:BRIGHTNESS=") >= 0)
+            {
+              int paramStart = header.indexOf("GET /cmd=LED:BRIGHTNESS=") + strlen("GET /cmd=LED:BRIGHTNESS=");
+              String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+              
+              sysSetupStruc.ambLightBrightness = constrain(value.toInt(), 0, 255);
+              
+              EEPROM.put(0, sysSetupStruc);
+              EEPROM.commit();
+              
+              Serial.print("LED brightness: ");
+              Serial.println(sysSetupStruc.ambLightBrightness);
+              
+              client.println("HTTP/1.1 200 OK");
+              client.println("Content-type:text/plain");
+              client.println("Connection: close");
+              client.println();
+              client.println("LED brightness updated");
             }
             else if (header.indexOf("GET /cmd=LED:COUNT=") >= 0)
             {

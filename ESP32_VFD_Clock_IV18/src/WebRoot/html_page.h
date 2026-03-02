@@ -1378,24 +1378,15 @@ const char index_html[] = R"rawliteral(
         <div class="setup-row">
           <label class="setup-label">SSID (Network Name):</label>
           <div class="setup-controls">
-            <input type="text" id="wifiSsid" class="text-input" placeholder="Enter WiFi network name">
+            <select id="wifiSsid" class="select-input">
+              <option value="">Loading...</option>
+            </select>
           </div>
         </div>
         <div class="setup-row">
           <label class="setup-label">Password:</label>
           <div class="setup-controls">
             <input type="password" id="wifiPassword" class="text-input" placeholder="Enter WiFi password">
-          </div>
-        </div>
-        <div class="setup-row">
-          <label class="setup-label">Security:</label>
-          <div class="setup-controls">
-            <select id="wifiSecurity" class="select-input">
-              <option value="WPA2">WPA2</option>
-              <option value="WPA3">WPA3</option>
-              <option value="WPA">WPA</option>
-              <option value="OPEN">Open (No Password)</option>
-            </select>
           </div>
         </div>
         <div class="setup-row">
@@ -1487,9 +1478,7 @@ const char index_html[] = R"rawliteral(
               <span class="checkbox-label">Blink Point </span>
               <button class="set-button" onclick="setDisplayFormat(1)">SET</button>
             </td>
-            <td class="sensor-description">
-              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
-            </td>
+            
           </tr>
           <tr>
             <td class="sensor-control">
@@ -1502,9 +1491,7 @@ const char index_html[] = R"rawliteral(
               <span class="checkbox-label">Blink Point </span>
               <button class="set-button" onclick="setDisplayFormat(2)">SET</button>
             </td>
-            <td class="sensor-description">
-              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
-            </td>
+           
           </tr>
           <tr>
             <td class="sensor-control">
@@ -1517,6 +1504,9 @@ const char index_html[] = R"rawliteral(
               <span class="checkbox-label">Blink Point </span>
               <button class="set-button" onclick="setDisplayFormat(3)">SET</button>
             </td>
+            
+          </tr>
+          <tr>
             <td class="sensor-description">
               <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
             </td>
@@ -1851,28 +1841,83 @@ function setTimezone() {
 }
 
 // WiFi functions
-function saveWiFiAndReboot() {
-  const ssid = document.getElementById('wifiSsid').value;
-  const password = document.getElementById('wifiPassword').value;
-  const securityIndex = document.getElementById('wifiSecurity').selectedIndex;
+function populateWiFiSelect(currentSSID, isOffline) {
+  const select = document.getElementById('wifiSsid');
   
-  if (!ssid) {
-    logToTerminal('WIFI:SAVE', 'Error: Please enter SSID', true);
-    return;
+  if (isOffline) {
+    // Offline mode - scan networks once
+    const cmd = 'WIFI:SCAN';
+    sendCommand(cmd, (err, res) => {
+      if (err) {
+        select.innerHTML = '<option value="">Enter SSID manually</option>';
+        logToTerminal(cmd, 'Error: ' + err.message, true);
+        return;
+      }
+      
+      try {
+        const networks = JSON.parse(res);
+        select.innerHTML = '';
+        
+        // Add option for manual entry
+        const manualOption = document.createElement('option');
+        manualOption.value = '';
+        manualOption.textContent = '-- Enter SSID manually --';
+        select.appendChild(manualOption);
+        
+        // Add scanned networks
+        networks.forEach(network => {
+          const option = document.createElement('option');
+          option.value = network.ssid;
+          option.textContent = `${network.ssid} (${network.rssi} dBm)${network.secure ? ' 🔒' : ''}`;
+          select.appendChild(option);
+        });
+        
+        console.log(`Found ${networks.length} networks`);
+      } catch (e) {
+        select.innerHTML = '<option value="">Enter SSID manually</option>';
+        logToTerminal(cmd, 'Error parsing networks: ' + e.message, true);
+      }
+    });
+  } else {
+    // Online mode - show current SSID
+    select.innerHTML = '';
+    
+    const manualOption = document.createElement('option');
+    manualOption.value = '';
+    manualOption.textContent = '-- Enter SSID manually --';
+    select.appendChild(manualOption);
+    
+    if (currentSSID && currentSSID.trim() !== '') {
+      const currentOption = document.createElement('option');
+      currentOption.value = currentSSID;
+      currentOption.textContent = `${currentSSID} (current)`;
+      currentOption.selected = true;
+      select.appendChild(currentOption);
+    }
+  }
+}
+
+function saveWiFiAndReboot() {
+  const select = document.getElementById('wifiSsid');
+  let ssid = select.value;
+  
+  // If manual entry selected, prompt for SSID
+  if (!ssid || ssid === '') {
+    ssid = prompt('Enter WiFi SSID:');
+    if (!ssid) {
+      logToTerminal('WIFI:SAVE', 'Error: SSID is required', true);
+      return;
+    }
   }
   
-  const cmd = `WIFI:SAVE=${ssid},${password},${securityIndex}`;
+  const password = document.getElementById('wifiPassword').value;
+  
+  // Security index always 0 (will be auto-detected by ESP32)
+  const cmd = `WIFI:SAVE=${ssid},${password},0`;
   sendCommand(cmd, (err, res) => {
     if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
     else {
-      logToTerminal(cmd, res + '\nRebooting device...', false);
-      // Send reboot command
-      setTimeout(() => {
-        sendCommand('REBOOT', (err2, res2) => {
-          if (err2) logToTerminal('REBOOT', 'Error: ' + err2.message, true);
-          else logToTerminal('REBOOT', res2, false);
-        });
-      }, 500);
+      logToTerminal(cmd, res + '\\nDevice will restart...', false);
     }
   });
 }
@@ -1974,8 +2019,11 @@ function loadSettings() {
       
       // WiFi settings
       if (settings.wifi) {
-        document.getElementById('wifiSsid').value = settings.wifi.ssid || '';
-        document.getElementById('wifiSecurity').selectedIndex = settings.wifi.security || 0;
+        // Store current SSID in data attribute for later use
+        const ssidElement = document.getElementById('wifiSsid');
+        if (ssidElement) {
+          ssidElement.setAttribute('data-current-ssid', settings.wifi.ssid || '');
+        }
       }
       
       // NTP settings
@@ -2084,6 +2132,27 @@ document.addEventListener('DOMContentLoaded', function() {
   if (dateTimeInput) {
     dateTimeInput.value = now.toISOString().slice(0,16);
   }
+  
+  // Check device status and populate WiFi list accordingly
+  const cmd = 'GET_DEVICE_INFO';
+  sendCommand(cmd, (err, res) => {
+    if (!err && res) {
+      const parts = res.split(',');
+      const status = parts[8]; // Status is 9th field (index 8)
+      const isOffline = status && status.trim() === 'OFFLINE';
+      
+      // Get current SSID from settings (will be loaded by loadSettings)
+      setTimeout(() => {
+        const currentSSID = document.getElementById('wifiSsid').getAttribute('data-current-ssid') || '';
+        populateWiFiSelect(currentSSID, isOffline);
+      }, 300);
+    } else {
+      // Default to offline mode on error
+      setTimeout(() => {
+        populateWiFiSelect('', true);
+      }, 300);
+    }
+  });
   
   // Load all settings from device
   loadSettings();
