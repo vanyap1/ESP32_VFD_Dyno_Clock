@@ -6,6 +6,7 @@
 #include <DNSServer.h>
 #include <Wire.h>
 
+#define FIRST_SETUP_AP_NAME "VFD_Setup"
 // I2C scanner for diagnostics
 void scanI2C();
 

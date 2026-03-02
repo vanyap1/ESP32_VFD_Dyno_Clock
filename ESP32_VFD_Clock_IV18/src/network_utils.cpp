@@ -1,5 +1,4 @@
 #include "network_utils.h"
-#include "setup.h"
 
 // Internal state
 static bool apModeActive = false;

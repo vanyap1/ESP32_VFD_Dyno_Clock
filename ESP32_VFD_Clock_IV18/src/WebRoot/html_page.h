@@ -1241,69 +1241,6 @@ const char charGen[] = R"rawliteral(
   )rawliteral";
 
 
-
-
-const char apConfig[] = R"rawliteral(
-  <!DOCTYPE html>
-  <html lang="en">
-  <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WiFi Configuration</title>
-    <style>
-      body {
-        background-color: #121212; /* Темний фон */
-        color: #e0e0e0; /* Світлий текст */
-        font-family: Arial, sans-serif;
-        text-align: center;
-      }
-      h1 {
-        color: #4caf50; /* Зелений заголовок */
-      }
-      form {
-        max-width: 400px;
-        margin: auto;
-        padding: 20px;
-        background-color: #1e1e1e; /* Темно-сірий фон форми */
-        border: 2px solid #4caf50; /* Зелена рамка */
-        border-radius: 10px;
-        box-shadow: 0 0 15px rgba(0, 255, 0, 0.2); /* Зелена тінь */
-      }
-      select, input[type='text'], input[type='submit'] {
-        width: calc(100% - 22px);
-        padding: 10px;
-        margin: 8px 0;
-        border: 1px solid #4caf50; /* Зелена рамка */
-        border-radius: 5px;
-        background-color: #2c2c2c; /* Темний фон полів */
-        color: #e0e0e0; /* Світлий текст */
-      }
-      input[type='submit'] {
-        background-color: #2196f3; /* Синя кнопка */
-        color: white;
-        cursor: pointer;
-        transition: background-color 0.3s ease;
-      }
-      input[type='submit']:hover {
-        background-color: #1976d2; /* Темно-синя кнопка при наведенні */
-      }
-    </style>
-  </head>
-  <body>
-    <h1>WiFi Configuration</h1>
-    <form action="/submit" method="get">
-      <label for="ssid">Select SSID:</label><br>
-      <select id="ssid" name="ssid">
-        %OPTIONS%
-      </select><br>
-      <label for="pass">Password:</label><br>
-      <input type="text" id="pass" name="pass" placeholder="Enter Password"><br>
-      <input type="submit" value="Save">
-    </form>
-  </body>
-  </html>
-  )rawliteral";
-
 const char index_html[] = R"rawliteral(
 <!DOCTYPE html>
 <html>

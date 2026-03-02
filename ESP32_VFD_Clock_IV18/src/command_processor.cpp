@@ -319,7 +319,21 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     sendOKResponse(client, "Settings updated");
     return true;
   }
-  
+  else if (header.indexOf("GET / ") >= 0) {
+    sendHTMLHeader(client);
+    screeenUpdateRestricted = false;
+    const char* ptr = index_html;
+    size_t len = strlen(index_html);
+    const size_t chunkSize = 1024;
+    while (len > 0) {
+      size_t toSend = (len > chunkSize) ? chunkSize : len;
+      client.write((const uint8_t*)ptr, toSend);
+      ptr += toSend;
+      len -= toSend;
+      delay(1);
+    }
+    return true;
+  }
   else if (header.indexOf("GET /chargen") >= 0) {
     sendHTMLHeader(client);
     
@@ -596,21 +610,7 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     return true;
   }
   
-  else if (header.indexOf("GET / ") >= 0) {
-    sendHTMLHeader(client);
-    
-    const char* ptr = index_html;
-    size_t len = strlen(index_html);
-    const size_t chunkSize = 1024;
-    while (len > 0) {
-      size_t toSend = (len > chunkSize) ? chunkSize : len;
-      client.write((const uint8_t*)ptr, toSend);
-      ptr += toSend;
-      len -= toSend;
-      delay(1);
-    }
-    return true;
-  }
+  
   
   else if (header.indexOf("GET /cmd=WIFI:SAVE=") >= 0) {
     int paramStart = header.indexOf("GET /cmd=WIFI:SAVE=") + strlen("GET /cmd=WIFI:SAVE=");
@@ -723,88 +723,47 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     return true;
   }
   
-  else if (header.indexOf("GET /cmd=DISPLAY:SCREEN1=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=DISPLAY:SCREEN1=") + strlen("GET /cmd=DISPLAY:SCREEN1=");
-    String params = header.substring(paramStart, header.indexOf(" ", paramStart));
-    params = urlDecode(params);
-    
-    int comma1 = params.indexOf(",");
-    int comma2 = params.indexOf(",", comma1 + 1);
-    int comma3 = params.indexOf(",", comma2 + 1);
-    
-    if (comma1 != -1 && comma2 != -1 && comma3 != -1) {
-      String format = params.substring(0, comma1);
-      format.toCharArray(sysSetupStruc.displayFormat[0], sizeof(sysSetupStruc.displayFormat[0]));
-      sysSetupStruc.displayFormatTime[0] = params.substring(comma1 + 1, comma2).toInt();
-      sysSetupStruc.displayFormatEnable[0] = params.substring(comma2 + 1, comma3).toInt();
-      sysSetupStruc.displayFormatBlink[0] = params.substring(comma3 + 1).toInt();
-      
-      EEPROM.put(0, sysSetupStruc);
-      EEPROM.commit();
-      
-      Serial.println("Display Screen 1 settings saved");
-      
-      sendOKResponse(client, "Screen 1 updated");
-    } else {
-      sendErrorResponse(client, 400, "Invalid parameters");
+  else if (header.indexOf("GET /cmd=DISPLAY:SCREEN") >= 0) {
+    int screenNum = -1;
+    if (header.indexOf("GET /cmd=DISPLAY:SCREEN1=") >= 0) {
+      screenNum = 0;
+    } else if (header.indexOf("GET /cmd=DISPLAY:SCREEN2=") >= 0) {
+      screenNum = 1;
+    } else if (header.indexOf("GET /cmd=DISPLAY:SCREEN3=") >= 0) {
+      screenNum = 2;
     }
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=DISPLAY:SCREEN2=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=DISPLAY:SCREEN2=") + strlen("GET /cmd=DISPLAY:SCREEN2=");
-    String params = header.substring(paramStart, header.indexOf(" ", paramStart));
-    params = urlDecode(params);
     
-    int comma1 = params.indexOf(",");
-    int comma2 = params.indexOf(",", comma1 + 1);
-    int comma3 = params.indexOf(",", comma2 + 1);
-    
-    if (comma1 != -1 && comma2 != -1 && comma3 != -1) {
-      String format = params.substring(0, comma1);
-      format.toCharArray(sysSetupStruc.displayFormat[1], sizeof(sysSetupStruc.displayFormat[1]));
-      sysSetupStruc.displayFormatTime[1] = params.substring(comma1 + 1, comma2).toInt();
-      sysSetupStruc.displayFormatEnable[1] = params.substring(comma2 + 1, comma3).toInt();
-      sysSetupStruc.displayFormatBlink[1] = params.substring(comma3 + 1).toInt();
+    if (screenNum != -1) {
+      String searchStr = "GET /cmd=DISPLAY:SCREEN" + String(screenNum + 1) + "=";
+      int paramStart = header.indexOf(searchStr) + searchStr.length();
+      String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+      params = urlDecode(params);
       
-      EEPROM.put(0, sysSetupStruc);
-      EEPROM.commit();
+      int comma1 = params.indexOf(",");
+      int comma2 = params.indexOf(",", comma1 + 1);
+      int comma3 = params.indexOf(",", comma2 + 1);
       
-      Serial.println("Display Screen 2 settings saved");
-      
-      sendOKResponse(client, "Screen 2 updated");
-    } else {
-      sendErrorResponse(client, 400, "Invalid parameters");
+      if (comma1 != -1 && comma2 != -1 && comma3 != -1) {
+        String format = params.substring(0, comma1);
+        format.toCharArray(sysSetupStruc.displayFormat[screenNum], sizeof(sysSetupStruc.displayFormat[screenNum]));
+        sysSetupStruc.displayFormatTime[screenNum] = params.substring(comma1 + 1, comma2).toInt();
+        sysSetupStruc.displayFormatEnable[screenNum] = params.substring(comma2 + 1, comma3).toInt();
+        sysSetupStruc.displayFormatBlink[screenNum] = params.substring(comma3 + 1).toInt();
+        
+        EEPROM.put(0, sysSetupStruc);
+        EEPROM.commit();
+        
+        Serial.print("Display Screen ");
+        Serial.print(screenNum + 1);
+        Serial.println(" settings saved");
+        
+        String response = "Screen " + String(screenNum + 1) + " updated";
+        sendOKResponse(client, response.c_str());
+      } else {
+        sendErrorResponse(client, 400, "Invalid parameters");
+      }
+      return true;
     }
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=DISPLAY:SCREEN3=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=DISPLAY:SCREEN3=") + strlen("GET /cmd=DISPLAY:SCREEN3=");
-    String params = header.substring(paramStart, header.indexOf(" ", paramStart));
-    params = urlDecode(params);
-    
-    int comma1 = params.indexOf(",");
-    int comma2 = params.indexOf(",", comma1 + 1);
-    int comma3 = params.indexOf(",", comma2 + 1);
-    
-    if (comma1 != -1 && comma2 != -1 && comma3 != -1) {
-      String format = params.substring(0, comma1);
-      format.toCharArray(sysSetupStruc.displayFormat[2], sizeof(sysSetupStruc.displayFormat[2]));
-      sysSetupStruc.displayFormatTime[2] = params.substring(comma1 + 1, comma2).toInt();
-      sysSetupStruc.displayFormatEnable[2] = params.substring(comma2 + 1, comma3).toInt();
-      sysSetupStruc.displayFormatBlink[2] = params.substring(comma3 + 1).toInt();
-      
-      EEPROM.put(0, sysSetupStruc);
-      EEPROM.commit();
-      
-      Serial.println("Display Screen 3 settings saved");
-      
-      sendOKResponse(client, "Screen 3 updated");
-    } else {
-      sendErrorResponse(client, 400, "Invalid parameters");
-    }
-    return true;
   }
   
   else if (header.indexOf("GET /cmd=BLINK:POINT=") >= 0) {
@@ -834,123 +793,157 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     return true;
   }
   
-  else if (header.indexOf("GET /cmd=SENSOR:PRESSURE=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=SENSOR:PRESSURE=") + strlen("GET /cmd=SENSOR:PRESSURE=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+  else if (header.indexOf("GET /cmd=SENSOR:") >= 0) {
+    String sensorType = "";
+    bool* sensorPtr = nullptr;
+    bool hasSpecialLogic = false;
     
-    sysSetupStruc.sensorPressure = (value.toInt() == 1);
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("Pressure sensor: ");
-    Serial.println(sysSetupStruc.sensorPressure ? "ON" : "OFF");
-    
-    sendOKResponse(client, "Pressure sensor updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=SENSOR:TEMPERATURE=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=SENSOR:TEMPERATURE=") + strlen("GET /cmd=SENSOR:TEMPERATURE=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.sensorTemperature = (value.toInt() == 1);
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("Temperature sensor: ");
-    Serial.println(sysSetupStruc.sensorTemperature ? "ON" : "OFF");
-    
-    sendOKResponse(client, "Temperature sensor updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=SENSOR:AUTOBRIGHTNESS=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=SENSOR:AUTOBRIGHTNESS=") + strlen("GET /cmd=SENSOR:AUTOBRIGHTNESS=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.sensorAutoBrightness = (value.toInt() == 1);
-    
-    if (sysSetupStruc.sensorAutoBrightness) {
-      time_t now;
-      time(&now);
-      struct tm timeinfo;
-      localtime_r(&now, &timeinfo);
-      int hour = timeinfo.tm_hour;
-      
-      vfd.setBrightness((hour >= 21 || hour < 7) ? 1 : 7);
-    } else {
-      vfd.setBrightness(sysSetupStruc.displayBrightness);
+    if (header.indexOf("SENSOR:PRESSURE=") >= 0) {
+      sensorType = "PRESSURE";
+      sensorPtr = &sysSetupStruc.sensorPressure;
+    } else if (header.indexOf("SENSOR:TEMPERATURE=") >= 0) {
+      sensorType = "TEMPERATURE";
+      sensorPtr = &sysSetupStruc.sensorTemperature;
+    } else if (header.indexOf("SENSOR:AUTOBRIGHTNESS=") >= 0) {
+      sensorType = "AUTOBRIGHTNESS";
+      sensorPtr = &sysSetupStruc.sensorAutoBrightness;
+      hasSpecialLogic = true;
+    } else if (header.indexOf("SENSOR:WEATHERAPI=") >= 0) {
+      sensorType = "WEATHERAPI";
+      sensorPtr = &sysSetupStruc.sensorWeatherApi;
+    } else if (header.indexOf("SENSOR:CURRENCY=") >= 0) {
+      sensorType = "CURRENCY";
+      sensorPtr = &sysSetupStruc.sensorCurrency;
     }
     
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("Auto brightness: ");
-    Serial.println(sysSetupStruc.sensorAutoBrightness ? "ON" : "OFF");
-    
-    sendOKResponse(client, "Auto brightness updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=SENSOR:WEATHERAPI=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=SENSOR:WEATHERAPI=") + strlen("GET /cmd=SENSOR:WEATHERAPI=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.sensorWeatherApi = (value.toInt() == 1);
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("Weather API: ");
-    Serial.println(sysSetupStruc.sensorWeatherApi ? "ON" : "OFF");
-    
-    sendOKResponse(client, "Weather API updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=SENSOR:CURRENCY=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=SENSOR:CURRENCY=") + strlen("GET /cmd=SENSOR:CURRENCY=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.sensorCurrency = (value.toInt() == 1);
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("Currency: ");
-    Serial.println(sysSetupStruc.sensorCurrency ? "ON" : "OFF");
-    
-    sendOKResponse(client, "Currency updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=LED:COLOR=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=LED:COLOR=") + strlen("GET /cmd=LED:COLOR=");
-    String params = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    int r, g, b;
-    if (sscanf(params.c_str(), "%d,%d,%d", &r, &g, &b) == 3) {
-      sysSetupStruc.ambLightColr[0] = r;
-      sysSetupStruc.ambLightColr[1] = g;
-      sysSetupStruc.ambLightColr[2] = b;
+    if (sensorPtr != nullptr) {
+      String searchStr = "GET /cmd=SENSOR:" + sensorType + "=";
+      int paramStart = header.indexOf(searchStr) + searchStr.length();
+      String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+      
+      *sensorPtr = (value.toInt() == 1);
+      
+      if (hasSpecialLogic && sensorType == "AUTOBRIGHTNESS") {
+        if (sysSetupStruc.sensorAutoBrightness) {
+          time_t now;
+          time(&now);
+          struct tm timeinfo;
+          localtime_r(&now, &timeinfo);
+          int hour = timeinfo.tm_hour;
+          vfd.setBrightness((hour >= 21 || hour < 7) ? 1 : 7);
+        } else {
+          vfd.setBrightness(sysSetupStruc.displayBrightness);
+        }
+      }
       
       EEPROM.put(0, sysSetupStruc);
       EEPROM.commit();
       
-      Serial.print("LED color: R=");
-      Serial.print(r);
-      Serial.print(", G=");
-      Serial.print(g);
-      Serial.print(", B=");
-      Serial.println(b);
+      Serial.print(sensorType);
+      Serial.print(" sensor: ");
+      Serial.println(*sensorPtr ? "ON" : "OFF");
       
-      sendOKResponse(client, "LED color updated");
-    } else {
-      sendErrorResponse(client, 400, "Invalid color format");
+      String response = sensorType + " sensor updated";
+      sendOKResponse(client, response.c_str());
+      return true;
     }
-    return true;
+  }
+  
+  else if (header.indexOf("GET /cmd=LED:") >= 0) {
+    if (header.indexOf("LED:COLOR=") >= 0) {
+      int paramStart = header.indexOf("GET /cmd=LED:COLOR=") + strlen("GET /cmd=LED:COLOR=");
+      String params = header.substring(paramStart, header.indexOf(" ", paramStart));
+      
+      int r, g, b;
+      if (sscanf(params.c_str(), "%d,%d,%d", &r, &g, &b) == 3) {
+        sysSetupStruc.ambLightColr[0] = r;
+        sysSetupStruc.ambLightColr[1] = g;
+        sysSetupStruc.ambLightColr[2] = b;
+        
+        EEPROM.put(0, sysSetupStruc);
+        EEPROM.commit();
+        
+        Serial.printf("LED color: R=%d, G=%d, B=%d\n", r, g, b);
+        
+        sendOKResponse(client, "LED color updated");
+      } else {
+        sendErrorResponse(client, 400, "Invalid color format");
+      }
+      return true;
+    }
+    else if (header.indexOf("LED:BRIGHTNESS=") >= 0) {
+      int paramStart = header.indexOf("GET /cmd=LED:BRIGHTNESS=") + strlen("GET /cmd=LED:BRIGHTNESS=");
+      String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+      
+      sysSetupStruc.ambLightBrightness = constrain(value.toInt(), 0, 255);
+      
+      EEPROM.put(0, sysSetupStruc);
+      EEPROM.commit();
+      
+      Serial.print("LED brightness: ");
+      Serial.println(sysSetupStruc.ambLightBrightness);
+      
+      sendOKResponse(client, "LED brightness updated");
+      return true;
+    }
+    else if (header.indexOf("LED:COUNT=") >= 0) {
+      int paramStart = header.indexOf("GET /cmd=LED:COUNT=") + strlen("GET /cmd=LED:COUNT=");
+      String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+      
+      sysSetupStruc.ledCount = value.toInt();
+      
+      EEPROM.put(0, sysSetupStruc);
+      EEPROM.commit();
+      
+      Serial.print("LED count: ");
+      Serial.println(sysSetupStruc.ledCount);
+      
+      sendOKResponse(client, "LED count updated");
+      return true;
+    }
+    else if (header.indexOf("LED:EFFECT=") >= 0) {
+      int paramStart = header.indexOf("GET /cmd=LED:EFFECT=") + strlen("GET /cmd=LED:EFFECT=");
+      String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+      
+      sysSetupStruc.ledEffect = value.toInt();
+      
+      EEPROM.put(0, sysSetupStruc);
+      EEPROM.commit();
+      
+      Serial.print("LED effect: ");
+      Serial.println(sysSetupStruc.ledEffect);
+      
+      sendOKResponse(client, "LED effect updated");
+      return true;
+    }
+    else if (header.indexOf("LED:TEST") >= 0) {
+      Serial.println("LED test sequence started");
+      
+      for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+        leds[i] = CRGB::Red;
+        FastLED.show();
+        delay(200);
+        leds[i] = CRGB::Green;
+        FastLED.show();
+        delay(200);
+        leds[i] = CRGB::Blue;
+        FastLED.show();
+        delay(200);
+        leds[i] = CRGB::Black;
+        FastLED.show();
+      }
+      
+      for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+        leds[i] = CRGB(sysSetupStruc.ambLightColr[0], 
+                       sysSetupStruc.ambLightColr[1], 
+                       sysSetupStruc.ambLightColr[2]);
+      }
+      FastLED.show();
+      
+      Serial.println("LED test completed");
+      sendOKResponse(client, "LED test completed");
+      return true;
+    }
   }
   
   else if (header.indexOf("GET /cmd=DISPLAY:BRIGHTNESS=") >= 0) {
@@ -971,54 +964,6 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     Serial.println(sysSetupStruc.displayBrightness);
     
     sendOKResponse(client, "Display brightness updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=LED:BRIGHTNESS=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=LED:BRIGHTNESS=") + strlen("GET /cmd=LED:BRIGHTNESS=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.ambLightBrightness = constrain(value.toInt(), 0, 255);
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("LED brightness: ");
-    Serial.println(sysSetupStruc.ambLightBrightness);
-    
-    sendOKResponse(client, "LED brightness updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=LED:COUNT=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=LED:COUNT=") + strlen("GET /cmd=LED:COUNT=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.ledCount = value.toInt();
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("LED count: ");
-    Serial.println(sysSetupStruc.ledCount);
-    
-    sendOKResponse(client, "LED count updated");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=LED:EFFECT=") >= 0) {
-    int paramStart = header.indexOf("GET /cmd=LED:EFFECT=") + strlen("GET /cmd=LED:EFFECT=");
-    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
-    
-    sysSetupStruc.ledEffect = value.toInt();
-    
-    EEPROM.put(0, sysSetupStruc);
-    EEPROM.commit();
-    
-    Serial.print("LED effect: ");
-    Serial.println(sysSetupStruc.ledEffect);
-    
-    sendOKResponse(client, "LED effect updated");
     return true;
   }
   
@@ -1053,36 +998,8 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     return true;
   }
   
-  else if (header.indexOf("GET /cmd=LED:TEST") >= 0) {
-    Serial.println("LED test sequence started");
-    
-    for (int i = 0; i < sysSetupStruc.ledCount; i++) {
-      leds[i] = CRGB::Red;
-      FastLED.show();
-      delay(200);
-      leds[i] = CRGB::Green;
-      FastLED.show();
-      delay(200);
-      leds[i] = CRGB::Blue;
-      FastLED.show();
-      delay(200);
-      leds[i] = CRGB::Black;
-      FastLED.show();
-    }
-    
-    for (int i = 0; i < sysSetupStruc.ledCount; i++) {
-      leds[i] = CRGB(sysSetupStruc.ambLightColr[0], 
-                     sysSetupStruc.ambLightColr[1], 
-                     sysSetupStruc.ambLightColr[2]);
-    }
-    FastLED.show();
-    
-    Serial.println("LED test completed");
-    sendOKResponse(client, "LED test completed");
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=HDC2010:TEST") >= 0) {
+  else if (header.indexOf(":TEST") >= 0) {
+    if (header.indexOf("HDC2010:TEST") >= 0) {
     sendHTTPHeader(client, 200, "text/plain");
     
     if (tempHumiditySensor.isAvailable()) {
@@ -1103,11 +1020,10 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       Serial.println("HDC2010 test: FAIL");
     }
     
-    return true;
-  }
-  
-  else if (header.indexOf("GET /cmd=RTC:TEST") >= 0) {
-    sendHTTPHeader(client, 200, "text/plain");
+      return true;
+    }
+    else if (header.indexOf("RTC:TEST") >= 0) {
+      sendHTTPHeader(client, 200, "text/plain");
     
     if (rtc.isAvailable()) {
       uint8_t sec, min, hour, date, month;
@@ -1141,10 +1057,11 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       }
     } else {
       client.print("RV8803 RTC not found");
-      Serial.println("RTC test: NOT FOUND");
+        Serial.println("RTC test: NOT FOUND");
+      }
+      
+      return true;
     }
-    
-    return true;
   }
   
   else {

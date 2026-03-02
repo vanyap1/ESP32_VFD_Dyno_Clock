@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include <EEPROM.h>
-#include <WiFiClientSecure.h>
+#include <WiFiClient.h>
 #include <HTTPClient.h>
 #include <NTPClient.h>
 #include <ArduinoJson.h>
@@ -12,10 +12,18 @@
 #include "WebRoot/scripts.h"
 #include "WebRoot/styles.h"
 #include "WebRoot/images.h"
-#include "setup.h"
 #include <time.h>
-#include <esp_task_wdt.h>
-#include <Update.h>
+
+// Platform-specific includes
+#ifdef ESP32
+  #include <esp_task_wdt.h>
+  #include <Update.h>
+#elif defined(ESP8266)
+  #include <Updater.h>
+  // ESP8266 використовує стандартне годування watchdog
+  #define esp_task_wdt_reset() ESP.wdtFeed()
+#endif
+
 #include "FastLED.h"
 #include <Wire.h>
 #include "RV8803.h"
@@ -27,17 +35,29 @@
 #include "network_utils.h"
 #include "command_processor.h"
 
-#define LED_HTTP 16
-#define LED_WIFI 17
-#define INV_ENABLE 21
-#define LED_STRIP_MAX_NUM_LEDS 16
-#define LED_STRIP_PIN 33
-#define USR_BTN 4
-#define VFD_EN
+// Platform-specific pin definitions
+#ifdef ESP32
+  #define LED_HTTP 16
+  #define LED_WIFI 17
+  #define INV_ENABLE 21
+  #define LED_STRIP_PIN 33
+  #define USR_BTN 4
+  #define I2C_SDA 23
+  #define I2C_SCL 22
+  #define VFD_DATA_PIN 27
+#elif defined(ESP8266)
+  #define LED_HTTP D5      // GPIO14
+  #define LED_WIFI D6      // GPIO12
+  #define INV_ENABLE D7    // GPIO13
+  #define LED_STRIP_PIN D8 // GPIO15
+  #define USR_BTN D3       // GPIO0
+  #define I2C_SDA D2       // GPIO4 (default SDA)
+  #define I2C_SCL D1       // GPIO5 (default SCL)
+  #define VFD_DATA_PIN D4  // GPIO2
+#endif
 
-// I2C pins
-#define I2C_SDA 23
-#define I2C_SCL 22
+#define LED_STRIP_MAX_NUM_LEDS 16
+#define VFD_EN
 
 PT63XX vfd(27, IV18);
 CRGB leds[LED_STRIP_MAX_NUM_LEDS];
