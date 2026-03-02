@@ -20,7 +20,8 @@ extern SystemSetup sysSetupStruc;
 extern char weatherCond[16];
 extern bool offlineMode;
 extern const char *ntpServers[];
-extern NTPClient timeClient;
+extern NTPClient *timeClient;
+extern WiFiUDP *ntpUDP;
 extern uint32_t customCharData[96];
 extern CRGB leds[];
 extern float sensorTemp;
@@ -52,6 +53,32 @@ void sendHTTPHeader(WiFiClient& client, int statusCode, const char* contentType)
   }
   client.print("Content-type:");
   client.println(contentType);
+  client.println("Connection: close");
+  client.println();
+}
+
+void sendHTTPHeaderWithLength(WiFiClient& client, int statusCode, const char* contentType, size_t contentLength) {
+  switch (statusCode) {
+    case 200:
+      client.println("HTTP/1.1 200 OK");
+      break;
+    case 400:
+      client.println("HTTP/1.1 400 Bad Request");
+      break;
+    case 404:
+      client.println("HTTP/1.1 404 Not Found");
+      break;
+    case 500:
+      client.println("HTTP/1.1 500 Internal Server Error");
+      break;
+    default:
+      client.println("HTTP/1.1 200 OK");
+      break;
+  }
+  client.print("Content-type:");
+  client.println(contentType);
+  client.print("Content-Length: ");
+  client.println(contentLength);
   client.println("Connection: close");
   client.println();
 }
@@ -92,6 +119,69 @@ bool processHTTPCommand(WiFiClient& client, String& header,
   
   String currentLine = "";
   
+  // Handle captive portal detection requests from various platforms
+  if (offlineMode) {
+    // Check for captive portal detection URLs
+    if (header.indexOf("GET /generate_204") >= 0 ||      // Android
+        header.indexOf("GET /gen_204") >= 0 ||            // Android alternative
+        header.indexOf("GET /hotspot-detect.html") >= 0 || // iOS/macOS
+        header.indexOf("GET /library/test/success.html") >= 0 || // iOS alternative
+        header.indexOf("GET /connecttest.txt") >= 0 ||     // Windows
+        header.indexOf("GET /ncsi.txt") >= 0 ||            // Windows
+        header.indexOf("GET /redirect") >= 0 ||            // Generic
+        header.indexOf("GET /success.txt") >= 0 ||         // Various devices
+        header.indexOf("GET /canonical.html") >= 0) {      // Ubuntu
+      
+      Serial.print("Captive portal request: ");
+      String path = header.substring(header.indexOf("GET ") + 4, header.indexOf(" HTTP"));
+      Serial.println(path);
+      
+      // For connecttest.txt, return text response
+      if (header.indexOf("/connecttest.txt") >= 0 || header.indexOf("/ncsi.txt") >= 0) {
+        client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: text/plain");
+        client.println("Content-Length: 23");
+        client.println("Connection: close");
+        client.println();
+        client.print("Microsoft Connect Test");
+        client.flush();
+        return true;
+      }
+      
+      // For success.txt, return OK
+      if (header.indexOf("/success.txt") >= 0) {
+        client.println("HTTP/1.1 200 OK");
+        client.println("Content-Type: text/plain");
+        client.println("Content-Length: 7");
+        client.println("Connection: close");
+        client.println();
+        client.print("success");
+        client.flush();
+        return true;
+      }
+      
+      // For Android generate_204, return proper response
+      if (header.indexOf("/generate_204") >= 0 || header.indexOf("/gen_204") >= 0) {
+        client.println("HTTP/1.1 302 Found");
+        client.println("Location: http://192.168.4.1/");
+        client.println("Cache-Control: no-cache, no-store, must-revalidate");
+        client.println("Connection: close");
+        client.println();
+        client.flush();
+        return true;
+      }
+      
+      // For all others, redirect to main page
+      client.println("HTTP/1.1 302 Found");
+      client.println("Location: http://192.168.4.1/");
+      client.println("Cache-Control: no-cache");
+      client.println("Connection: close");
+      client.println();
+      client.flush();
+      return true;
+    }
+  }
+  
   if (header.indexOf("GET /cmd=GET:SETTINGS?") >= 0) {
     sendJSONHeader(client);
 
@@ -105,7 +195,8 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     ntp["server"] = sysSetupStruc.ntpServerIndex;
     ntp["enabled"] = sysSetupStruc.ntpEN ? true : false;
     
-    jsonDoc["timezone"] = sysSetupStruc.ntpTimeZone-12;
+    // Send timezone as hour offset (-12..+12)
+    jsonDoc["timezone"] = sysSetupStruc.ntpTimeZone;
     JsonArray formats = jsonDoc.createNestedArray("formats");
     for (int i = 0; i < 3; i++) {
       JsonObject format = formats.createNestedObject();
@@ -291,13 +382,38 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     }
     if (jsonDoc.containsKey("ntpServer")) {
       sysSetupStruc.ntpServerIndex = jsonDoc["ntpServer"];
-      timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
-      configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+      if (!offlineMode && sysSetupStruc.ntpEN && timeClient != nullptr) {
+        timeClient->setPoolServerName(ntpServers[sysSetupStruc.ntpServerIndex]);
+        timeClient->setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
+        configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+      }
     }
     if (jsonDoc.containsKey("timezone")) {
       sysSetupStruc.ntpTimeZone = jsonDoc["timezone"];
-      timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
-      configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+      if (!offlineMode && sysSetupStruc.ntpEN && timeClient != nullptr) {
+        timeClient->setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
+        configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+        
+        // Re-sync time with new timezone
+        Serial.println("Timezone changed, re-syncing time from NTP...");
+        if (timeClient->update()) {
+          unsigned long epochTime = timeClient->getEpochTime();
+          struct timeval tv = { .tv_sec = (time_t)epochTime, .tv_usec = 0 };
+          settimeofday(&tv, NULL);
+          
+          delay(50);
+          
+          // Update I2C RTC with new timezone-adjusted time
+          if (rtcAvailable) {
+            rtc.setFromSystemTime();
+            Serial.println("I2C RTC updated with new timezone");
+          } else {
+            Serial.println("ESP32 RTC updated with new timezone");
+          }
+        } else {
+          Serial.println("NTP re-sync failed after timezone change");
+        }
+      }
     }
     if (jsonDoc.containsKey("manualTime")) {
       sysSetupStruc.ntpEN = (jsonDoc["manualTime"] == "on") ? 1 : 0;
@@ -320,74 +436,193 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     return true;
   }
   else if (header.indexOf("GET / ") >= 0) {
-    sendHTMLHeader(client);
     screeenUpdateRestricted = false;
+    
+    // Small delay to ensure client is ready (helps with captive portal detection)
+    delay(10);
+    
+    // Check if client is still connected before sending
+    if (!client.connected()) {
+      Serial.println("Client disconnected before sending response");
+      return false;
+    }
+    
+    // Calculate content length once
+    size_t contentLength = strlen(index_html);
+    sendHTTPHeaderWithLength(client, 200, "text/html", contentLength);
+    
+    // Use smaller chunks in offline/AP mode for better mobile device compatibility
     const char* ptr = index_html;
-    size_t len = strlen(index_html);
-    const size_t chunkSize = 1024;
-    while (len > 0) {
-      size_t toSend = (len > chunkSize) ? chunkSize : len;
-      client.write((const uint8_t*)ptr, toSend);
-      ptr += toSend;
-      len -= toSend;
-      delay(1);
+    size_t remaining = contentLength;
+    const size_t chunkSize = offlineMode ? 512 : 2048;  // Smaller chunks for AP mode
+    
+    while (remaining > 0 && client.connected()) {
+      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+      size_t sent = client.write((const uint8_t*)ptr, toSend);
+      
+      if (sent == 0) {
+        // Write failed, client disconnected
+        Serial.println("Client disconnected during transfer");
+        break;
+      }
+      
+      ptr += sent;
+      remaining -= sent;
+      
+      // Yield to allow WiFi stack to process, more often in AP mode
+      if (remaining > 0) {
+        yield();
+        if (offlineMode) {
+          delay(5);  // Longer delay for AP mode stability
+        }
+      }
+    }
+    
+    if (remaining == 0) {
+      client.flush();
     }
     return true;
   }
   else if (header.indexOf("GET /chargen") >= 0) {
-    sendHTMLHeader(client);
+    delay(10);
+    
+    if (!client.connected()) {
+      Serial.println("Client disconnected before sending chargen");
+      return false;
+    }
+    
+    size_t contentLength = strlen(charGen);
+    sendHTTPHeaderWithLength(client, 200, "text/html", contentLength);
     
     const char* ptr = charGen;
-    size_t len = strlen(charGen);
-    const size_t chunkSize = 1024;
-    while (len > 0) {
-      size_t toSend = (len > chunkSize) ? chunkSize : len;
-      client.write((const uint8_t*)ptr, toSend);
-      ptr += toSend;
-      len -= toSend;
-      delay(1); 
+    size_t remaining = contentLength;
+    const size_t chunkSize = offlineMode ? 512 : 2048;
+    
+    while (remaining > 0 && client.connected()) {
+      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+      size_t sent = client.write((const uint8_t*)ptr, toSend);
+      
+      if (sent == 0) break;
+      
+      ptr += sent;
+      remaining -= sent;
+      
+      if (remaining > 0) {
+        yield();
+        if (offlineMode) delay(1);
+      }
     }
+    client.flush();
     return true;
   }
   
   else if (header.indexOf("GET /styles.css") >= 0) {
-    sendCSSHeader(client);
+    delay(10);
+    
+    if (!client.connected()) {
+      return false;
+    }
+    
+    size_t contentLength = strlen(commonStyles);
+    sendHTTPHeaderWithLength(client, 200, "text/css", contentLength);
     
     const char* ptr = commonStyles;
-    size_t len = strlen(commonStyles);
-    const size_t chunkSize = 1024;
-    while (len > 0) {
-      size_t toSend = (len > chunkSize) ? chunkSize : len;
-      client.write((const uint8_t*)ptr, toSend);
-      ptr += toSend;
-      len -= toSend;
-      delay(1);
+    size_t remaining = contentLength;
+    const size_t chunkSize = offlineMode ? 512 : 2048;
+    
+    while (remaining > 0 && client.connected()) {
+      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+      size_t sent = client.write((const uint8_t*)ptr, toSend);
+      
+      if (sent == 0) break;
+      
+      ptr += sent;
+      remaining -= sent;
+      
+      if (remaining > 0) {
+        yield();
+        if (offlineMode) delay(5);
+      }
+    }
+    
+    if (remaining == 0) {
+      client.flush();
     }
     return true;
   }
   
   else if (header.indexOf("GET /commonRest.js") >= 0) {
-    sendJSHeader(client);
+    delay(10);
+    
+    if (!client.connected()) {
+      return false;
+    }
+    
+    size_t contentLength = strlen(commonRest);
+    sendHTTPHeaderWithLength(client, 200, "text/javascript", contentLength);
+    
     const char* ptr = commonRest;
-    size_t len = strlen(commonRest);
-    const size_t chunkSize = 1024;
-    while (len > 0) {
-      size_t toSend = (len > chunkSize) ? chunkSize : len;
-      client.write((const uint8_t*)ptr, toSend);
-      ptr += toSend;
-      len -= toSend;
-      delay(1);
+    size_t remaining = contentLength;
+    const size_t chunkSize = offlineMode ? 512 : 2048;
+    
+    while (remaining > 0 && client.connected()) {
+      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+      size_t sent = client.write((const uint8_t*)ptr, toSend);
+      
+      if (sent == 0) break;
+      
+      ptr += sent;
+      remaining -= sent;
+      
+      if (remaining > 0) {
+        yield();
+        if (offlineMode) delay(5);
+      }
+    }
+    
+    if (remaining == 0) {
+      client.flush();
     }
     return true;
   }
   
   else if (header.indexOf("GET /favicon.ico") >= 0) {
+    delay(10);
+    
+    if (!client.connected()) {
+      return false;
+    }
+    
     client.println("HTTP/1.1 200 OK");
     client.println("Content-type:image/x-icon");
+    client.print("Content-Length: ");
+    client.println(sizeof(favicon_ico));
     client.println("Connection: close");
     client.println("Content-Transfer-Encoding: binary");
     client.println();
-    client.write(favicon_ico, sizeof(favicon_ico));
+    
+    // Send favicon in chunks for better stability
+    const uint8_t* ptr = (const uint8_t*)favicon_ico;
+    size_t remaining = sizeof(favicon_ico);
+    const size_t chunkSize = 512;
+    
+    while (remaining > 0 && client.connected()) {
+      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+      size_t sent = client.write(ptr, toSend);
+      
+      if (sent == 0) break;
+      
+      ptr += sent;
+      remaining -= sent;
+      
+      if (remaining > 0) {
+        yield();
+      }
+    }
+    
+    if (remaining == 0) {
+      client.flush();
+    }
     return true;
   }
   
@@ -501,40 +736,52 @@ bool processHTTPCommand(WiFiClient& client, String& header,
   }
   
   else if (header.indexOf("GET /cmd=WIFI:SCAN") >= 0) {
-    Serial.println("Scanning WiFi networks...");
+    Serial.println("WiFi networks scan requested");
     
-    SystemState previousState = getSystemState();
-    setSystemState(STATE_SCANNING);
+    // Check if we need to rescan or use cached results
+    bool forceRescan = (header.indexOf("force=1") >= 0);
+    int cachedCount = getStoredNetworksCount();
     
-    WiFiMode_t currentMode = WiFi.getMode();
-    if (currentMode == WIFI_AP) {
-      WiFi.mode(WIFI_AP_STA);
+    Serial.print("Cached networks count: ");
+    Serial.println(cachedCount);
+    Serial.print("Force rescan: ");
+    Serial.println(forceRescan ? "YES" : "NO");
+    
+    if (forceRescan || cachedCount == 0) {
+      Serial.println("Performing new WiFi scan...");
+      SystemState previousState = getSystemState();
+      setSystemState(STATE_SCANNING);
+      
+      scanAndStoreNetworks();
+      
+      setSystemState(previousState);
+    } else {
+      Serial.println("Using cached WiFi scan results");
     }
     
-    int n = WiFi.scanNetworks();
-    
-    setSystemState(previousState);
-    Serial.print("Networks found: ");
+    int n = getStoredNetworksCount();
+    Serial.print("Networks to send: ");
     Serial.println(n);
     
     sendJSONHeader(client);
     
     client.print("[");
-    for (int i = 0; i < n; ++i) {
+    for (int i = 0; i < n; i++) {
       if (i > 0) client.print(",");
+      WiFiScanResult network = getStoredNetwork(i);
       client.print("{\"ssid\":\"");
-      client.print(WiFi.SSID(i));
+      client.print(network.ssid);
       client.print("\",\"rssi\":");
-      client.print(WiFi.RSSI(i));
+      client.print(network.rssi);
       client.print(",\"secure\":");
-      client.print(WiFi.encryptionType(i) != WIFI_AUTH_OPEN ? "true" : "false");
+      client.print(network.secure ? "true" : "false");
       client.print("}");
     }
     client.print("]");
+    client.flush();
     
-    if (currentMode == WIFI_AP) {
-      WiFi.mode(WIFI_AP);
-    }
+    Serial.println("WiFi scan results sent");
+    
     return true;
   }
   
@@ -672,11 +919,15 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       
       time_t t = mktime(&manualTime);
       struct timeval now = { .tv_sec = t };
-      settimeofday(&now, NULL);
+      settimeofday(&now, NULL);  // Sets both ESP32 RTC and system time
       
+      // Sync I2C RTC if available
+      // ESP32 built-in RTC is already set by settimeofday()
       if (rtcAvailable) {
         rtc.setFromSystemTime();
-        Serial.println("RTC updated with manual time");
+        Serial.println("I2C RTC updated with manual time");
+      } else {
+        Serial.println("ESP32 built-in RTC updated with manual time");
       }
       
       Serial.println("Manual time set");
@@ -709,9 +960,33 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     int paramStart = header.indexOf("GET /cmd=TIMEZONE=") + strlen("GET /cmd=TIMEZONE=");
     String value = header.substring(paramStart, header.indexOf(" ", paramStart));
     
-    sysSetupStruc.ntpTimeZone = value.toInt()+12;
-    timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
-    configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+    // Store timezone as hour offset (-12..+12)
+    sysSetupStruc.ntpTimeZone = value.toInt();
+    
+    if (!offlineMode && sysSetupStruc.ntpEN && timeClient != nullptr) {
+      timeClient->setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
+      configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+      
+      // Re-sync time with new timezone
+      Serial.println("Timezone changed, re-syncing time from NTP...");
+      if (timeClient->update()) {
+        unsigned long epochTime = timeClient->getEpochTime();
+        struct timeval tv = { .tv_sec = (time_t)epochTime, .tv_usec = 0 };
+        settimeofday(&tv, NULL);
+        
+        delay(50);
+        
+        // Update I2C RTC with new timezone-adjusted time
+        if (rtcAvailable) {
+          rtc.setFromSystemTime();
+          Serial.println("I2C RTC updated with new timezone");
+        } else {
+          Serial.println("ESP32 RTC updated with new timezone");
+        }
+      } else {
+        Serial.println("NTP re-sync failed after timezone change");
+      }
+    }
     
     EEPROM.put(0, sysSetupStruc);
     EEPROM.commit();
@@ -1029,6 +1304,33 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       uint8_t sec, min, hour, date, month;
       uint16_t year;
       
+      // Get system time first
+      time_t now;
+      struct tm timeinfo;
+      time(&now);
+      localtime_r(&now, &timeinfo);
+      
+      client.print("System Time:\\n");
+      client.print("Time: ");
+      if (timeinfo.tm_hour < 10) client.print("0");
+      client.print(timeinfo.tm_hour);
+      client.print(":");
+      if (timeinfo.tm_min < 10) client.print("0");
+      client.print(timeinfo.tm_min);
+      client.print(":");
+      if (timeinfo.tm_sec < 10) client.print("0");
+      client.print(timeinfo.tm_sec);
+      client.print("\\n");
+      client.print("Date: ");
+      if (timeinfo.tm_mday < 10) client.print("0");
+      client.print(timeinfo.tm_mday);
+      client.print(".");
+      if ((timeinfo.tm_mon + 1) < 10) client.print("0");
+      client.print(timeinfo.tm_mon + 1);
+      client.print(".");
+      client.print(timeinfo.tm_year + 1900);
+      client.print("\\n\\n");
+      
       if (rtc.getTime(sec, min, hour, date, month, year)) {
         client.print("RV8803 RTC OK\\n");
         client.print("Time: ");
@@ -1062,6 +1364,50 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       
       return true;
     }
+  }
+  
+  else if (header.indexOf("GET /cmd=RTC:SYNC") >= 0) {
+    sendHTTPHeader(client, 200, "text/plain");
+    
+    if (rtc.isAvailable()) {
+      // Get current system time
+      time_t now;
+      struct tm timeinfo;
+      time(&now);
+      localtime_r(&now, &timeinfo);
+      
+      // Sync RTC from system time
+      if (rtc.setFromSystemTime()) {
+        client.print("RTC synchronized with system time\\n");
+        client.print("System time: ");
+        if (timeinfo.tm_hour < 10) client.print("0");
+        client.print(timeinfo.tm_hour);
+        client.print(":");
+        if (timeinfo.tm_min < 10) client.print("0");
+        client.print(timeinfo.tm_min);
+        client.print(":");
+        if (timeinfo.tm_sec < 10) client.print("0");
+        client.print(timeinfo.tm_sec);
+        client.print(" ");
+        if (timeinfo.tm_mday < 10) client.print("0");
+        client.print(timeinfo.tm_mday);
+        client.print(".");
+        if ((timeinfo.tm_mon + 1) < 10) client.print("0");
+        client.print(timeinfo.tm_mon + 1);
+        client.print(".");
+        client.print(timeinfo.tm_year + 1900);
+        
+        Serial.println("RTC synchronized with system time");
+      } else {
+        client.print("RTC sync failed");
+        Serial.println("RTC sync failed");
+      }
+    } else {
+      client.print("RV8803 RTC not found");
+      Serial.println("RTC not available for sync");
+    }
+    
+    return true;
   }
   
   else {

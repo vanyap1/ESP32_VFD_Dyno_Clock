@@ -59,7 +59,7 @@
 #define LED_STRIP_MAX_NUM_LEDS 16
 #define VFD_EN
 
-PT63XX vfd(27, IV18);
+PT63XX vfd(VFD_DATA_PIN, IV18);
 CRGB leds[LED_STRIP_MAX_NUM_LEDS];
 
 RV8803 rtc;
@@ -74,7 +74,8 @@ SystemSetup sysSetupStruc;
 bool offlineMode = false;
 
 WiFiServer serverConfigured(80);
-WiFiUDP ntpUDP;
+WiFiUDP *ntpUDP = nullptr;
+NTPClient *timeClient = nullptr;
 
 #define NTP_UPDATE_INTERVAL 216000000
 #define NTP_FIRST_UPDATE_DELAY 5000
@@ -83,17 +84,16 @@ uint32_t ntpUpdateInterval = NTP_FIRST_UPDATE_DELAY;
 
 
 const char *ntpServers[] = {"pool.ntp.org", "time.google.com", "time.windows.com"};
-NTPClient timeClient(ntpUDP, ntpServers[0]);
 
 bool screeenUpdateRestricted = false;
 
-float sensorTemp = 23.5;
-int sensorPress = 1013;
-int sensorHum = 65;
-float weatherTemp = 18.0;
-float currencyEUR = 43.5;
-float currencyUSD = 40.2;
-float currencyBTC = 98.3;
+float sensorTemp = 0.0;
+int sensorPress = 0;
+int sensorHum = 0;
+float weatherTemp = 0.0;
+float currencyEUR = 0.0;
+float currencyUSD = 0.0;
+float currencyBTC = 0.0;
 char weatherCond[16] = "Cloudy";
 
 int currentScreenIndex = 0;
@@ -190,14 +190,20 @@ void setup()
   scanI2C();
 
   // Initialize RTC if enabled in config
+  // RTC hierarchy:
+  // 1. Try to use external I2C RTC (RV8803) - more accurate, battery backup
+  // 2. Fallback to ESP32 built-in RTC if I2C RTC not available
+  // Both are synchronized with NTP when online
   Serial.print("Initializing RTC... ");
   rtcAvailable = rtc.begin(Wire);
   if (rtcAvailable) {
-    Serial.println("OK");
-    // Load time from RTC on startup
+    Serial.println("OK (I2C RV8803)");
+    // Load time from I2C RTC on startup
     rtc.updateSystemTime();
   } else {
-    Serial.println("Not found");
+    Serial.println("I2C RTC not found - using ESP32 built-in RTC");
+    // ESP32 RTC will be used by default (time() calls)
+    // Time will be set from NTP when online or manually via DATETIME command
   }
   
   // Initialize temperature/humidity sensor if enabled in config
@@ -230,8 +236,15 @@ void setup()
   
   // Initialize LED effects
   initLEDEffects(leds, sysSetupStruc.ledCount);
+  
+  // Start LED animation in separate FreeRTOS task
+  startLEDAnimationTask();
+  
+  // If first start, start AP mode immediately
+  if (sysSetupStruc.FirstStart != 55) {
+    startAPMode();
+  }
 
-  updateLEDEffect();
   vfd.writeStringUniverslaChrTab("HELLO", 1);
   Serial.println("System Setup Data:");
   Serial.print("FirstStart: ");
@@ -254,80 +267,192 @@ void setup()
     delay(200);
   }
   Serial.println("Setup complete.");
-  Serial.println("Connecting to WiFi...");
-  digitalWrite(LED_WIFI, HIGH);
-
-  // Set LED state to connecting
-  setSystemState(STATE_WIFI_CONNECTING);
   
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(sysSetupStruc.ssid, sysSetupStruc.pass);
-
-  int attempts = 0;
-  const int maxAttempts = 20;
-
-  while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts)
-  {
-    updateLEDEffect(); // Update LED animation during connection
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-
-  if (WiFi.status() != WL_CONNECTED)
-  {
-    Serial.println("\nWiFi connection failed! Starting AP mode...");
+  // Skip WiFi setup if already in offline mode (e.g., FirstStart)
+  if (!offlineMode) {
+    // Check if SSID is valid before attempting connection
+    size_t ssidLen = strlen(sysSetupStruc.ssid);
+    bool validSSID = (ssidLen > 0 && ssidLen <= 32);
+    
+    Serial.println("\n=== WiFi Setup Check ===");
+    Serial.print("SSID length: ");
+    Serial.println(ssidLen);
+    Serial.print("SSID valid: ");
+    Serial.println(validSSID ? "YES" : "NO");
+    
+    if (!validSSID) {
+    Serial.println("========================\n");
+    Serial.println("[ERROR] SSID is empty or invalid!");
+    Serial.println("SSID must be 1-32 characters long.");
+    Serial.println("Starting AP mode for configuration...");
+    
+    vfd.writeStringUniverslaChrTab("NO-SSID", 1);
+    delay(1000);
+    
     digitalWrite(LED_WIFI, LOW);
     digitalWrite(LED_HTTP, HIGH);
     offlineMode = true;
+    
     setSystemState(STATE_AP_MODE);
     startAPMode();
     
     // If RTC is available, use it for time in offline mode
+    // If I2C RTC not available, ESP32 built-in RTC is used automatically
     if (rtcAvailable) {
       rtc.updateSystemTime();
-      Serial.println("Time loaded from RTC");
+      Serial.println("Time loaded from I2C RTC");
+    } else {
+      Serial.println("Using ESP32 built-in RTC (set time manually via web interface)");
+    }
+  } else {
+    Serial.println("========================\n");
+    Serial.print("Attempting to connect to: ");
+    Serial.println(sysSetupStruc.ssid);
+    Serial.println("Connecting to WiFi...");
+    digitalWrite(LED_WIFI, HIGH);
+
+    // Set LED state to connecting
+    setSystemState(STATE_WIFI_CONNECTING);
+    
+    WiFi.mode(WIFI_STA);
+    WiFi.begin(sysSetupStruc.ssid, sysSetupStruc.pass);
+
+    int attempts = 0;
+    const int maxAttempts = 20;
+
+    while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts)
+    {
+      delay(500);
+      Serial.print(".");
+      attempts++;
+    }
+
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      Serial.println("\nWiFi connection failed! Starting AP mode...");
+      digitalWrite(LED_WIFI, LOW);
+      digitalWrite(LED_HTTP, HIGH);
+      offlineMode = true;
+      
+      setSystemState(STATE_AP_MODE);
+      startAPMode();
+      
+      // If RTC is available, use it for time in offline mode
+      // If I2C RTC not available, ESP32 built-in RTC is used automatically
+      if (rtcAvailable) {
+        rtc.updateSystemTime();
+        Serial.println("Time loaded from I2C RTC");
+      } else {
+        Serial.println("Using ESP32 built-in RTC (set time manually via web interface)");
+      }
+    }
+    else
+    {
+      Serial.println("\nWiFi connected.");
+      offlineMode = false;
+      
+      // Show connection success animation for 1.5 seconds
+      setSystemState(STATE_WIFI_CONNECTED);
+      delay(1500);
     }
   }
-  else
-  {
-    Serial.println("\nWiFi connected.");
-    offlineMode = false;
-    setSystemState(STATE_NORMAL); // Switch to normal operation
-  }
+  }  // End of if (!offlineMode)
+  
   digitalWrite(LED_WIFI, LOW);
   digitalWrite(LED_HTTP, LOW);
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
   serverConfigured.begin();
 
-  timeClient.setTimeOffset(sysSetupStruc.ntpTimeZone * 3600);
-  configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
-
-
+  // Configure NTP only if not in offline mode
+  if (!offlineMode && sysSetupStruc.ntpEN) {
+    // Create UDP and NTP client dynamically
+    ntpUDP = new WiFiUDP();
+    ntpUDP->begin(123);  // NTP uses port 123
     
-  
+    // NTPClient with 0 offset - we'll use configTime for timezone
+    timeClient = new NTPClient(*ntpUDP, ntpServers[sysSetupStruc.ntpServerIndex], 
+                                0, NTP_UPDATE_INTERVAL);
+    timeClient->begin();
+    
+    // Configure ESP32 built-in NTP with timezone
+    configTime(sysSetupStruc.ntpTimeZone * 3600, 0, ntpServers[sysSetupStruc.ntpServerIndex]);
+    Serial.print("NTP configured with server: ");
+    Serial.println(ntpServers[sysSetupStruc.ntpServerIndex]);
+    Serial.print("Timezone offset: ");
+    Serial.print(sysSetupStruc.ntpTimeZone);
+    Serial.println(" hours");
+    
+    // Perform initial NTP sync using NTPClient
+    Serial.println("Performing initial NTP sync...");
+    int retries = 0;
+    while (!timeClient->update() && retries < 5) {
+      delay(1000);
+      retries++;
+      Serial.print(".");
+    }
+    
+    if (retries < 5) {
+      Serial.println("\nInitial NTP sync successful!");
+      
+      // Get UTC time from NTPClient and set system time
+      unsigned long epochTime = timeClient->getEpochTime();
+      struct timeval tv = { .tv_sec = (time_t)epochTime, .tv_usec = 0 };
+      settimeofday(&tv, NULL);
+      
+      // Wait a bit for time to stabilize
+      delay(100);
+      
+      // Print current time with timezone
+      struct tm timeinfo;
+      if (getLocalTime(&timeinfo)) {
+        Serial.println(&timeinfo, "System time with timezone: %H:%M:%S %d.%m.%Y");
+        
+        // Update I2C RTC with local time (if available)
+        // ESP32 built-in RTC is already set by settimeofday()
+        if (rtcAvailable) {
+          rtc.setFromSystemTime();
+          Serial.println("I2C RTC initialized with NTP time");
+        } else {
+          Serial.println("Using ESP32 built-in RTC (time synchronized with NTP)");
+        }
+      } else {
+        Serial.println("Failed to get local time!");
+      }
+    } else {
+      Serial.println("\nInitial NTP sync failed! Will retry in loop.");
+    }
+  } else {
+    Serial.println("NTP disabled (offline mode)");
+  }
+
+  // Display IP address on VFD
   vfd.writeStringUniverslaChrTab("                ", 0);
-  IPAddress ip = WiFi.localIP();
-  char ipPart[7];
-  sprintf(ipPart, "-%d", ip[0]);
-  vfd.writeStringUniverslaChrTab(ipPart, 0);
-  delay(500);
-  sprintf(ipPart, "-%d", ip[1]);
-  vfd.writeStringUniverslaChrTab(ipPart, 0);
-  delay(500);
-  sprintf(ipPart, "-%03d", ip[2]);
-  vfd.writeStringUniverslaChrTab(ipPart, 0);
-  delay(500);
-  sprintf(ipPart, "-%03d", ip[3]);
-  vfd.writeStringUniverslaChrTab(ipPart, 0);
-  delay(500);
+  if (!offlineMode) {
+    IPAddress ip = WiFi.localIP();
+    char ipPart[7];
+    sprintf(ipPart, "-%d", ip[0]);
+    vfd.writeStringUniverslaChrTab(ipPart, 0);
+    delay(500);
+    sprintf(ipPart, "-%d", ip[1]);
+    vfd.writeStringUniverslaChrTab(ipPart, 0);
+    delay(500);
+    sprintf(ipPart, "-%03d", ip[2]);
+    vfd.writeStringUniverslaChrTab(ipPart, 0);
+    delay(500);
+    sprintf(ipPart, "-%03d", ip[3]);
+    vfd.writeStringUniverslaChrTab(ipPart, 0);
+    delay(500);
+  } else {
+    vfd.writeStringUniverslaChrTab("OFFLINE", 0);
+    delay(2000);
+  }
   vfd.setBlinkCharData(sysSetupStruc.blinkMask, sysSetupStruc.blinkPosition);
-    
-
   
-
-
+  // Always set to normal mode at the end of setup
+  // This ensures user LED effects are active regardless of online/offline mode
+  setSystemState(STATE_NORMAL);
+  Serial.println("Setup complete - LED effects switched to user configuration");
 }
 uint32_t screenUpdateTimer = 0;
 uint32_t ntpUpdateTimer = 0;
@@ -360,23 +485,25 @@ void updateSensors() {
   }
 }
 
-// Sync time with RTC
+// Sync time with I2C RTC (if available)
 void syncRTCTime() {
   static uint32_t lastRTCSync = 0;
   
-  // Sync with RTC every hour if available and NTP is enabled
+  // Sync with I2C RTC every hour if available and NTP is enabled
   if (rtcAvailable && sysSetupStruc.ntpEN) {
     if (millis() - lastRTCSync > 3600000) {  // 1 hour
       lastRTCSync = millis();
       
-      // If we're online, update RTC from system time (which gets updated via NTP)
+      // If we're online, update I2C RTC from system time (which gets updated via NTP)
+      // ESP32 built-in RTC is automatically updated by settimeofday() during NTP sync
       if (!offlineMode) {
         rtc.setFromSystemTime();
-        Serial.println("RTC updated from system time");
+        Serial.println("I2C RTC updated from system time");
       } else {
-        // If offline, update system time from RTC
+        // If offline, update system time from I2C RTC (more accurate with battery backup)
+        // This also updates ESP32 built-in RTC via updateSystemTime()
         rtc.updateSystemTime();
-        Serial.println("System time updated from RTC");
+        Serial.println("System time updated from I2C RTC");
       }
     }
   }
@@ -432,8 +559,8 @@ void loop()
     }
   }
 
-  // Only update NTP if online
-  if (sysSetupStruc.ntpEN && !offlineMode)
+  // Only update NTP if online and NTP client is initialized
+  if (sysSetupStruc.ntpEN && !offlineMode && timeClient != nullptr)
   {
     if (millis() - ntpUpdateTimer > ntpUpdateInterval)
     {
@@ -444,31 +571,42 @@ void loop()
       ntpRequestInProgress = true;
       ntpRequestStartTime = millis();
       
-      timeClient.update();
+      bool ntpSuccess = timeClient->update();
       
       ntpRequestInProgress = false;
       
-      // Update RTC from system time after NTP sync
-      if (rtcAvailable) {
-        rtc.setFromSystemTime();
-        Serial.println("RTC synced with NTP time");
-      }
-      
-      Serial.print("Current time (NTP): ");
-      Serial.println(timeClient.getFormattedTime());
-      if (!getLocalTime(&timeinfo))
-      {
-        Serial.println("Failed to obtain time");
-      }
-      else
-      {
-        Serial.println(&timeinfo, "Current time (RTC): %H:%M:%S");
+      if (ntpSuccess) {
+        Serial.println("NTP update successful");
+        
+        // Get UTC time from NTPClient and set system time
+        unsigned long epochTime = timeClient->getEpochTime();
+        struct timeval tv = { .tv_sec = (time_t)epochTime, .tv_usec = 0 };
+        settimeofday(&tv, NULL);
+        
+        delay(100);  // Wait for time to stabilize
+        
+        // Print formatted time
+        if (getLocalTime(&timeinfo)) {
+          Serial.println(&timeinfo, "System time updated: %H:%M:%S %d.%m.%Y");
+          
+          // Update I2C RTC from system time after NTP sync (if available)
+          // ESP32 built-in RTC is updated automatically by settimeofday()
+          if (rtcAvailable) {
+            rtc.setFromSystemTime();
+            Serial.println("I2C RTC synced with NTP time");
+          }
+        } else {
+          Serial.println("Failed to obtain local time after NTP update");
+          ledIndicateWiFiFailed();
+          delay(2000);  // Show failure indication for 2 seconds
+        }
+      } else {
+        Serial.println("NTP update failed!");
+        ledIndicateWiFiFailed();
+        delay(2000);  // Show failure indication for 2 seconds
       }
     }
   }
-
-  // Update LED effects
-  updateLEDEffect();
 
   // Update sensors
   updateSensors();
@@ -479,16 +617,33 @@ void loop()
   // Handle AP mode DNS requests if active (for captive portal)
   if (isAPModeActive()) {
     getDNSServer().processNextRequest();
+    yield();  // Allow WiFi stack to process
   }
 
   WiFiClient client = serverConfigured.available();
   if (client)
   {
-    client.setTimeout(30000); // Set 30 second timeout for large firmware uploads
+    if (offlineMode) {
+      Serial.println("New AP client connected");
+    }
+    
+    // Longer timeout for AP mode to handle slower mobile devices
+    uint32_t timeout = offlineMode ? 10000 : 30000;
+    client.setTimeout(timeout);
+    
     String currentLine = "";
     String header = "";
+    header.reserve(512);  // Pre-allocate memory to avoid fragmentation
+    uint32_t startTime = millis();
+    
     while (client.connected())
     {
+      // Timeout check
+      if (millis() - startTime > timeout) {
+        Serial.println("Client timeout");
+        break;
+      }
+      
       if (client.available())
       {
         char c = client.read();
@@ -520,6 +675,14 @@ void loop()
         }
       }
     }
+    
+    // Ensure all data is sent before closing
+    client.flush();
+    delay(1);  // Give WiFi stack time to finish transmission
     client.stop();
+    
+    if (offlineMode) {
+      delay(10);  // Small delay in AP mode for stability
+    }
   }
 }

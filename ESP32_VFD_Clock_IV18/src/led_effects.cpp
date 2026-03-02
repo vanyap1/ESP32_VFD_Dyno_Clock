@@ -10,33 +10,121 @@ static uint32_t ledUpdateTimer = 0;
 static uint8_t ledAnimationPhase = 0;
 static SystemState systemState = STATE_NORMAL;
 
+// FreeRTOS task handle and mutex
+static TaskHandle_t ledTaskHandle = nullptr;
+static SemaphoreHandle_t stateMutex = nullptr;
+
 void initLEDEffects(CRGB* ledsArray, uint8_t numLeds) {
   leds = ledsArray;
   ledCount = numLeds;
   ledUpdateTimer = 0;
   ledAnimationPhase = 0;
   systemState = STATE_NORMAL;
+  
+  // Create mutex for thread-safe state access
+  if (stateMutex == nullptr) {
+    stateMutex = xSemaphoreCreateMutex();
+  }
 }
 
 void setSystemState(SystemState state) {
-  systemState = state;
+  if (stateMutex != nullptr) {
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    systemState = state;
+    xSemaphoreGive(stateMutex);
+  } else {
+    systemState = state;
+  }
 }
 
 SystemState getSystemState() {
-  return systemState;
+  SystemState state;
+  if (stateMutex != nullptr) {
+    xSemaphoreTake(stateMutex, portMAX_DELAY);
+    state = systemState;
+    xSemaphoreGive(stateMutex);
+  } else {
+    state = systemState;
+  }
+  return state;
+}
+
+// FreeRTOS task for LED animation
+void ledAnimationTask(void* parameter) {
+  const TickType_t xDelay = pdMS_TO_TICKS(20); // 50Hz update rate
+  
+  while (true) {
+    updateLEDEffect();
+    vTaskDelay(xDelay);
+  }
+}
+
+// Start LED animation task
+void startLEDAnimationTask() {
+  if (ledTaskHandle == nullptr) {
+    xTaskCreatePinnedToCore(
+      ledAnimationTask,     // Task function
+      "LEDAnimation",       // Task name
+      2048,                 // Stack size (bytes)
+      nullptr,              // Task parameter
+      1,                    // Priority (1 = low)
+      &ledTaskHandle,       // Task handle
+      0                     // Core 0 (Core 1 is used by WiFi)
+    );
+    Serial.println("LED animation task started");
+  }
+}
+
+// Stop LED animation task
+void stopLEDAnimationTask() {
+  if (ledTaskHandle != nullptr) {
+    vTaskDelete(ledTaskHandle);
+    ledTaskHandle = nullptr;
+    Serial.println("LED animation task stopped");
+  }
 }
 
 void ledIndicateWiFiConnecting() {
-  // Chase effect for WiFi connecting
-  int position = (ledAnimationPhase / 8) % 4;
+  // Chase effect with color transition for WiFi connecting
+  int position = (ledAnimationPhase / 6) % 4;
   for (int i = 0; i < 4; i++) {
     if (i == position) {
-      leds[i] = CRGB(0, 100, 255); // Blue leading LED
+      // Bright cyan leading LED
+      leds[i] = CRGB(0, 150, 255);
     } else if (i == (position - 1 + 4) % 4) {
-      leds[i] = CRGB(0, 30, 80); // Dimmer trail
+      // Blue trail
+      leds[i] = CRGB(0, 50, 150);
+    } else if (i == (position - 2 + 4) % 4) {
+      // Dim purple trail
+      leds[i] = CRGB(20, 0, 80);
     } else {
       leds[i] = CRGB(0, 0, 0);
     }
+  }
+}
+
+void ledIndicateWiFiConnected() {
+  // Quick green flash to indicate successful connection
+  // Flash twice quickly then fade out
+  int cycle = ledAnimationPhase % 60;
+  uint8_t brightness = 0;
+  
+  if (cycle < 8) {
+    // First flash
+    brightness = 255;
+  } else if (cycle < 16) {
+    // First fade
+    brightness = 255 - ((cycle - 8) * 32);
+  } else if (cycle < 24) {
+    // Second flash
+    brightness = 255;
+  } else if (cycle < 40) {
+    // Second fade
+    brightness = 255 - ((cycle - 24) * 16);
+  }
+  
+  for (int i = 0; i < 4; i++) {
+    leds[i] = CRGB(0, brightness, 0);
   }
 }
 
@@ -46,23 +134,45 @@ void ledIndicateWiFiFailed() {
   for (int i = 0; i < 4; i++) {
     leds[i] = CRGB(brightness, 0, 0);
   }
+  delay(500); // Short delay to allow pulse to be visible
 }
 
 void ledIndicateAPMode() {
-  // Slow blue pulse for AP mode
-  uint8_t brightness = beatsin8(20, 30, 200);
+  // Gentle breathing blue pulse for AP mode
+  uint8_t brightness = beatsin8(25, 20, 180);
+  // Add slight color shift
+  uint8_t blueVariation = beatsin8(15, 180, 255);
   for (int i = 0; i < 4; i++) {
-    leds[i] = CRGB(0, brightness / 3, brightness);
+    // Offset each LED slightly for wave effect
+    uint8_t offset = i * 15;
+    uint8_t ledBrightness = beatsin8(25, 20, 180, 0, offset);
+    leds[i] = CRGB(0, ledBrightness / 4, ledBrightness);
   }
 }
 
 void ledIndicateScanning() {
-  // Fast orange blink for scanning
-  uint8_t blink = (ledAnimationPhase / 10) % 2;
+  // Radar scanning effect - LEDs light up sequentially then fade
+  int position = (ledAnimationPhase / 4) % 8; // 0-7 for forward and back sweep
+  
   for (int i = 0; i < 4; i++) {
-    if (blink) {
-      leds[i] = CRGB(255, 100, 0);
+    int ledPos = i;
+    if (position >= 4) {
+      // Reverse sweep
+      ledPos = 3 - i;
+      position = 7 - position;
+    }
+    
+    if (ledPos == position) {
+      // Active scanning LED - bright orange
+      leds[i] = CRGB(255, 120, 0);
+    } else if (ledPos == position - 1) {
+      // Trail - dimmer orange
+      leds[i] = CRGB(150, 60, 0);
+    } else if (ledPos < position) {
+      // Already scanned - very dim green
+      leds[i] = CRGB(0, 40, 0);
     } else {
+      // Not yet scanned - off
       leds[i] = CRGB(0, 0, 0);
     }
   }
@@ -78,13 +188,19 @@ void updateLEDEffect() {
   // Increment animation phase (0-255)
   ledAnimationPhase++;
   
+  // Get current system state (thread-safe)
+  SystemState currentState = getSystemState();
+  
   // Check if we're in a special system state
-  if (systemState != STATE_NORMAL) {
+  if (currentState != STATE_NORMAL) {
     FastLED.setBrightness(255); // Full brightness for status indication
     
-    switch(systemState) {
+    switch(currentState) {
       case STATE_WIFI_CONNECTING:
         ledIndicateWiFiConnecting();
+        break;
+      case STATE_WIFI_CONNECTED:
+        ledIndicateWiFiConnected();
         break;
       case STATE_WIFI_FAILED:
         ledIndicateWiFiFailed();

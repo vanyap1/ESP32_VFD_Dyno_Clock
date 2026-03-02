@@ -1313,9 +1313,16 @@ const char index_html[] = R"rawliteral(
         <div class="setup-row">
           <label class="setup-label">SSID (Network Name):</label>
           <div class="setup-controls">
-            <select id="wifiSsid" class="select-input">
+            <select id="wifiSsid" class="select-input" onchange="toggleManualSsidInput()" style="flex: 1;">
               <option value="">Loading...</option>
             </select>
+            <button class="set-button" onclick="refreshWiFiNetworks()" style="margin-left: 10px;">🔄 Refresh</button>
+          </div>
+        </div>
+        <div class="setup-row" id="manualSsidRow" style="display: none;">
+          <label class="setup-label">Manual SSID:</label>
+          <div class="setup-controls">
+            <input type="text" id="manualSsidInput" class="text-input" placeholder="Enter SSID manually">
           </div>
         </div>
         <div class="setup-row">
@@ -1340,6 +1347,12 @@ const char index_html[] = R"rawliteral(
           <div class="setup-controls">
             <input type="datetime-local" id="dateTimePicker" class="datetime-input">
             <button class="set-button" onclick="setDateTime()">OK</button>
+          </div>
+        </div>
+        <div class="setup-row">
+          <label class="setup-label"></label>
+          <div class="setup-controls" style="font-size: 0.9em; color: #888;">
+            ℹ️ Time is stored in RTC (I2C RV8803 if available, otherwise ESP32 built-in). NTP sync updates both.
           </div>
         </div>
         <div class="setup-row">
@@ -1588,9 +1601,9 @@ const char index_html[] = R"rawliteral(
         </tr>
         <tr>
           <td>DATETIME,... <span class="copy-icon" onclick="copyToInput('DATETIME,2026,1,31,12,30,0')" title="Copy to input">📋</span></td>
-          <td>Set date and time</td>
+          <td>Set date and time (updates ESP32 RTC and I2C RTC if available)</td>
           <td>DATETIME,2026,1,31,12,30,0</td>
-          <td>OK</td>
+          <td>Time set successfully</td>
         </tr>
         <tr>
           <td>I2C:SCAN <span class="copy-icon" onclick="copyToInput('I2C:SCAN')" title="Copy to input">📋</span></td>
@@ -1617,6 +1630,12 @@ const char index_html[] = R"rawliteral(
           <td>RV8803 RTC OK\nTime: 12:34:56\nDate: 02.03.2026</td>
         </tr>
         <tr>
+          <td>RTC:SYNC <span class="copy-icon" onclick="copyToInput('RTC:SYNC')" title="Copy to input">📋</span></td>
+          <td>Sync RTC with system time</td>
+          <td>RTC:SYNC</td>
+          <td>RTC synchronized with system time\nSystem time: 12:34:56 02.03.2026</td>
+        </tr>
+        <tr>
           <td>NTP:SERVER=&lt;idx&gt; <span class="copy-icon" onclick="copyToInput('NTP:SERVER=0')" title="Copy to input">📋</span></td>
           <td>Set NTP server (0-4)</td>
           <td>NTP:SERVER=0</td>
@@ -1629,9 +1648,9 @@ const char index_html[] = R"rawliteral(
           <td>OK</td>
         </tr>
         <tr>
-          <td>TIMEZONE=&lt;idx&gt; <span class="copy-icon" onclick="copyToInput('TIMEZONE=14')" title="Copy to input">📋</span></td>
-          <td>Set timezone (0-24)</td>
-          <td>TIMEZONE=14</td>
+          <td>TIMEZONE=&lt;offset&gt; <span class="copy-icon" onclick="copyToInput('TIMEZONE=2')" title="Copy to input">📋</span></td>
+          <td>Set timezone offset in hours (-12 to +12)</td>
+          <td>TIMEZONE=2</td>
           <td>OK</td>
         </tr>
         <tr>
@@ -1791,8 +1810,8 @@ function setNtpEnable() {
 }
 
 function setTimezone() {
-  const timezoneIndex = document.getElementById('timezone').selectedIndex;
-  const cmd = `TIMEZONE=${timezoneIndex}`;
+  const timezoneValue = document.getElementById('timezone').value;
+  const cmd = `TIMEZONE=${timezoneValue}`;
   sendCommand(cmd, (err, res) => {
     if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
     else logToTerminal(cmd, res, false);
@@ -1810,6 +1829,7 @@ function populateWiFiSelect(currentSSID, isOffline) {
       if (err) {
         select.innerHTML = '<option value="">Enter SSID manually</option>';
         logToTerminal(cmd, 'Error: ' + err.message, true);
+        toggleManualSsidInput(); // Update visibility
         return;
       }
       
@@ -1832,9 +1852,11 @@ function populateWiFiSelect(currentSSID, isOffline) {
         });
         
         console.log(`Found ${networks.length} networks`);
+        toggleManualSsidInput(); // Update visibility after populating
       } catch (e) {
         select.innerHTML = '<option value="">Enter SSID manually</option>';
         logToTerminal(cmd, 'Error parsing networks: ' + e.message, true);
+        toggleManualSsidInput(); // Update visibility
       }
     });
   } else {
@@ -1853,23 +1875,96 @@ function populateWiFiSelect(currentSSID, isOffline) {
       currentOption.selected = true;
       select.appendChild(currentOption);
     }
+    
+    toggleManualSsidInput(); // Update visibility after populating
+  }
+}
+
+// Refresh WiFi networks (force rescan)
+function refreshWiFiNetworks() {
+  const select = document.getElementById('wifiSsid');
+  select.innerHTML = '<option value="">Scanning...</option>';
+  
+  const cmd = 'WIFI:SCAN?force=1';
+  sendCommand(cmd, (err, res) => {
+    if (err) {
+      select.innerHTML = '<option value="">Enter SSID manually</option>';
+      logToTerminal(cmd, 'Error: ' + err.message, true);
+      toggleManualSsidInput();
+      return;
+    }
+    
+    try {
+      const networks = JSON.parse(res);
+      select.innerHTML = '';
+      
+      // Add option for manual entry
+      const manualOption = document.createElement('option');
+      manualOption.value = '';
+      manualOption.textContent = '-- Enter SSID manually --';
+      select.appendChild(manualOption);
+      
+      // Add scanned networks
+      networks.forEach(network => {
+        const option = document.createElement('option');
+        option.value = network.ssid;
+        option.textContent = `${network.ssid} (${network.rssi} dBm)${network.secure ? ' 🔒' : ''}`;
+        select.appendChild(option);
+      });
+      
+      logToTerminal(cmd, `Found ${networks.length} networks`, false);
+      toggleManualSsidInput();
+    } catch (e) {
+      select.innerHTML = '<option value="">Enter SSID manually</option>';
+      logToTerminal(cmd, 'Error parsing networks: ' + e.message, true);
+      toggleManualSsidInput();
+    }
+  });
+}
+
+// Toggle manual SSID input visibility
+function toggleManualSsidInput() {
+  const select = document.getElementById('wifiSsid');
+  const manualRow = document.getElementById('manualSsidRow');
+  const manualInput = document.getElementById('manualSsidInput');
+  
+  console.log('toggleManualSsidInput called, select.value:', select.value);
+  
+  if (select.value === '' || select.value === 'Loading...' || select.value === 'Scanning...') {
+    manualRow.style.display = 'flex';
+    if (select.value !== 'Loading...' && select.value !== 'Scanning...') {
+      manualInput.focus();
+    }
+  } else {
+    manualRow.style.display = 'none';
+    manualInput.value = '';
   }
 }
 
 function saveWiFiAndReboot() {
   const select = document.getElementById('wifiSsid');
+  const manualInput = document.getElementById('manualSsidInput');
   let ssid = select.value;
   
-  // If manual entry selected, prompt for SSID
-  if (!ssid || ssid === '') {
-    ssid = prompt('Enter WiFi SSID:');
+  console.log('saveWiFiAndReboot called');
+  console.log('Select value:', ssid);
+  console.log('Manual input value:', manualInput.value);
+  
+  // If manual entry selected, get from manual input
+  if (!ssid || ssid === '' || ssid === 'Loading...' || ssid === 'Scanning...') {
+    ssid = manualInput.value.trim();
+    console.log('Using manual SSID:', ssid);
     if (!ssid) {
+      alert('Please enter WiFi SSID');
       logToTerminal('WIFI:SAVE', 'Error: SSID is required', true);
+      manualInput.focus();
       return;
     }
   }
   
   const password = document.getElementById('wifiPassword').value;
+  
+  console.log('Saving WiFi - SSID:', ssid, 'Password length:', password.length);
   
   // Security index always 0 (will be auto-detected by ESP32)
   const cmd = `WIFI:SAVE=${ssid},${password},0`;
@@ -1991,9 +2086,25 @@ function loadSettings() {
         document.getElementById('ntpEnable').checked = settings.ntp.enabled || false;
       }
       
-      // Timezone
+      // Timezone (settings.timezone is hour offset -12..+12)
       if (settings.timezone !== undefined) {
-        document.getElementById('timezone').selectedIndex = settings.timezone || 14; // default UTC+2 (Kyiv)
+        const select = document.getElementById('timezone');
+        // Find option with matching value
+        for (let i = 0; i < select.options.length; i++) {
+          if (parseInt(select.options[i].value) === settings.timezone) {
+            select.selectedIndex = i;
+            break;
+          }
+        }
+      } else {
+        // Default to UTC+2 (Kyiv) if not set
+        const select = document.getElementById('timezone');
+        for (let i = 0; i < select.options.length; i++) {
+          if (parseInt(select.options[i].value) === 2) {
+            select.selectedIndex = i;
+            break;
+          }
+        }
       }
       
       // Display screens
