@@ -47,7 +47,6 @@ const char charGen[] = R"rawliteral(
       <div class="nav-menu">
         <a href="/" class="nav-button">MainPage</a>
         <a href="/chargen" class="nav-button active">Seg Contructor</a>
-
       </div>
       
       <div class="system-controls">
@@ -1351,7 +1350,6 @@ const char index_html[] = R"rawliteral(
       <div class="nav-menu">
         <a href="/" class="nav-button active">MainPage</a>
         <a href="/chargen" class="nav-button">Seg Contructor</a>
-
       </div>
       
       <div class="system-controls">
@@ -1656,6 +1654,30 @@ const char index_html[] = R"rawliteral(
           <td>Set date and time</td>
           <td>DATETIME,2026,1,31,12,30,0</td>
           <td>OK</td>
+        </tr>
+        <tr>
+          <td>I2C:SCAN <span class="copy-icon" onclick="copyToInput('I2C:SCAN')" title="Copy to input">📋</span></td>
+          <td>Scan I2C bus for devices</td>
+          <td>I2C:SCAN</td>
+          <td>[{"address":"0x40","decimal":64},{"address":"0x32","decimal":50}]</td>
+        </tr>
+        <tr>
+          <td>LED:TEST <span class="copy-icon" onclick="copyToInput('LED:TEST')" title="Copy to input">📋</span></td>
+          <td>Test LED strip (RGB cycle)</td>
+          <td>LED:TEST</td>
+          <td>LED test completed</td>
+        </tr>
+        <tr>
+          <td>HDC2010:TEST <span class="copy-icon" onclick="copyToInput('HDC2010:TEST')" title="Copy to input">📋</span></td>
+          <td>Test temperature/humidity sensor</td>
+          <td>HDC2010:TEST</td>
+          <td>HDC2010 sensor OK\nTemp: 23.5 C\nHum: 45.2 %</td>
+        </tr>
+        <tr>
+          <td>RTC:TEST <span class="copy-icon" onclick="copyToInput('RTC:TEST')" title="Copy to input">📋</span></td>
+          <td>Test RTC clock module</td>
+          <td>RTC:TEST</td>
+          <td>RV8803 RTC OK\nTime: 12:34:56\nDate: 02.03.2026</td>
         </tr>
         <tr>
           <td>NTP:SERVER=&lt;idx&gt; <span class="copy-icon" onclick="copyToInput('NTP:SERVER=0')" title="Copy to input">📋</span></td>

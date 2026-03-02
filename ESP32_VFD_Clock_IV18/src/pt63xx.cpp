@@ -301,7 +301,7 @@ void PT63XX::writeString(const char* str, uint8_t position) {
     {
     case IV18:
      
-      charCode = (charCode == ':') ? '-' : charCode; // Замінюємо ':' на '-'
+      charCode = (charCode == ':') ? '-' : charCode;
       if(charCode == '.' || charCode == ',') {
         if (hasLastChar) {
           writeChar(currentPos - 1, lastCharData | 0x40);
