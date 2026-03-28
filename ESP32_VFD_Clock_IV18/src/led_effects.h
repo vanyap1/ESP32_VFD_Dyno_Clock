@@ -12,7 +12,8 @@ enum SystemState {
   STATE_WIFI_CONNECTED,   // WiFi connected - green flash
   STATE_WIFI_FAILED,      // WiFi connection failed - red pulse
   STATE_AP_MODE,          // AP mode active - blue pulse
-  STATE_SCANNING          // Scanning networks - radar sweep
+  STATE_SCANNING,         // Scanning networks - radar sweep
+  STATE_ERROR             // Error state - red flash
 };
 
 // Initialize LED effects system
@@ -38,6 +39,7 @@ void ledIndicateWiFiConnecting();
 void ledIndicateWiFiConnected();
 void ledIndicateWiFiFailed();
 void ledIndicateAPMode();
+void ledIndicateError();
 void ledIndicateScanning();
 
 #endif // LED_EFFECTS_H

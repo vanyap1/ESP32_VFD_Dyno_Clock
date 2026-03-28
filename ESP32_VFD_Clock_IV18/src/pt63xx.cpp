@@ -8,6 +8,7 @@ uint8_t specialCharData = 0;
 uint32_t blinkCharMask = 0;
 uint8_t  blinkCharPosition = -1;
 uint8_t blinkCharState = 0;
+uint8_t blinkCharEnabled = 0;
 uint32_t customCharData[96] = {0};
 
 uint8_t IVL2_7_characters[] = {
@@ -137,7 +138,7 @@ uint8_t IV18_characters[] = {
 
 
 PT63XX::PT63XX(int latchPin, SCREEN_TYPE type)
-  : _latchPin(latchPin), _screenType(type) {
+  : _latchPin(latchPin), _screenType(type), _screenDriver(DIG12_SEG16) {
     digitalWrite(_latchPin, HIGH);
     pinMode(_latchPin, OUTPUT);
   }
@@ -156,7 +157,13 @@ void screen_init() {
 void PT63XX::begin() {
     digitalWrite(_latchPin, HIGH);
     pinMode(_latchPin, OUTPUT);
-    SPI.begin(5, 18, 19, -1);
+    
+    #ifdef ESP32
+        SPI.begin(5, 18, 19, -1);  // Custom SPI pins for ESP32
+    #else
+        SPI.begin();  // ESP8266 uses default hardware SPI pins
+    #endif
+    
     memset(vfd_buff, 0, sizeof(vfd_buff));
     delay(200);
     sendCommand(COMMAND_4 | DISPLAY_OFF); // Display OFF
@@ -165,25 +172,24 @@ void PT63XX::begin() {
     sendCommand(COMMAND_2 | NORMAL_OPERATION_MODE | INCREMENT_ADDRESS | WRITE_DATA_TO_DISPLAY_MODE); // Command 2 (Normal operation, Increment address, Write data to display)
     delay(10);
     clearDisplay();
-    switch (_screenType)
-    {
-    case IV18:
-      sendCommand(COMMAND_1 | DIG9_SEG19); //Display mode set
-      break;
-    case IVL2_7:
-      sendCommand(COMMAND_1 | DIG5_SEG23);
-      break;
-
-    default:
-      sendCommand(COMMAND_1 | DIG9_SEG19); 
-      break;
-    }
     
-    
+    sendCommand(COMMAND_1 | _screenDriver); //Display mode set
+     
     delay(10);
 
     sendCommand(COMMAND_4 | DISPLAY_ON | INIT_BRIGHTNESS); // Command 4 (Display ON)
     setBrightness(MAX_BRIGHTNESS);  
+}
+
+void PT63XX::begin(uint8_t screenDriver) {
+    _screenDriver = screenDriver;
+    begin();
+}
+
+void PT63XX::setScreenDriver(uint8_t driver) {
+    _screenDriver = driver;
+    // Send command to update display mode
+    sendCommand(COMMAND_1 | _screenDriver);
 }
 
 void PT63XX::setBlinkCharData(uint32_t charMask, uint8_t position){
@@ -191,8 +197,9 @@ void PT63XX::setBlinkCharData(uint32_t charMask, uint8_t position){
   blinkCharPosition = position;
 }
 
-void PT63XX::blinkState(uint8_t state){
+void PT63XX::blinkState(uint8_t state, uint8_t enabled){
   blinkCharState = state;
+  blinkCharEnabled = enabled;
 }
 
 void PT63XX::clearDisplay() {
@@ -229,7 +236,7 @@ void PT63XX::writeRawData(uint8_t position, uint32_t data){
   if (position >= 12) {
     return; // Invalid position
   }
-  if (blinkCharPosition == position) {
+  if (blinkCharPosition == position && blinkCharEnabled) {
     if (blinkCharState) {
       data = data | blinkCharMask;
     } else {

@@ -1,7 +1,16 @@
 #include <Arduino.h>
 #include <EEPROM.h>
-#include <WiFiClient.h>
-#include <HTTPClient.h>
+
+// Platform-specific WiFi includes
+#ifdef ESP32
+  #include <WiFi.h>
+  #include <WiFiClient.h>
+  #include <HTTPClient.h>
+#elif defined(ESP8266)
+  #include <ESP8266WiFi.h>
+  #include <ESP8266HTTPClient.h>
+#endif
+
 #include <NTPClient.h>
 #include <ArduinoJson.h>
 #include <DNSServer.h>
@@ -46,14 +55,17 @@
   #define I2C_SCL 22
   #define VFD_DATA_PIN 27
 #elif defined(ESP8266)
-  #define LED_HTTP D5      // GPIO14
-  #define LED_WIFI D6      // GPIO12
-  #define INV_ENABLE D7    // GPIO13
-  #define LED_STRIP_PIN D8 // GPIO15
-  #define USR_BTN D3       // GPIO0
-  #define I2C_SDA D2       // GPIO4 (default SDA)
-  #define I2C_SCL D1       // GPIO5 (default SCL)
-  #define VFD_DATA_PIN D4  // GPIO2
+  // WARNING: Adjust pins according to your hardware!
+  // Hardware SPI pins (used by VFD): MOSI=D7, MISO=D6, SCK=D5 - DO NOT USE for other purposes!
+  // Hardware I2C pins (used by RTC/sensors): SDA=D2, SCL=D1
+  #define LED_HTTP D0      // GPIO16
+  #define LED_WIFI D3      // GPIO0 (boot pin, has pull-up)
+  #define INV_ENABLE D8    // GPIO15 (boot pin, has pull-down)
+  #define LED_STRIP_PIN D4 // GPIO2 (boot pin, has pull-up, built-in LED)
+  #define USR_BTN D3       // GPIO0 (shared with LED_WIFI, boot/flash button)
+  #define I2C_SDA D2       // GPIO4 (hardware I2C SDA)
+  #define I2C_SCL D1       // GPIO5 (hardware I2C SCL)
+  #define VFD_DATA_PIN D0  // GPIO16 (SPI CS/latch pin, shared with LED_HTTP)
 #endif
 
 #define LED_STRIP_MAX_NUM_LEDS 16
@@ -129,6 +141,7 @@ void initDefaultConfig()
 
   sysSetupStruc.blinkMask = 0x80;
   sysSetupStruc.blinkPosition = 4;
+  sysSetupStruc.screenDriver = PT6315_DIG12_SEG16; // Default to PT6315: 12 digits x 16 segments
   
 
   sysSetupStruc.sensorPressure = true;
@@ -136,6 +149,7 @@ void initDefaultConfig()
   sysSetupStruc.sensorAutoBrightness = false;
   sysSetupStruc.sensorWeatherApi = true;
   sysSetupStruc.sensorCurrency = true;
+  strcpy(sysSetupStruc.myCurrency, "UAH");  // Default currency
   
   sysSetupStruc.displayBrightness = 1;
   sysSetupStruc.ambLightColr[0] = 22;  // r
@@ -176,13 +190,21 @@ void setup()
     digitalWrite(LED_WIFI, LOW);
     delay(200);
   }
-  vfd.begin();
+  
+  // Load EEPROM settings before initializing VFD
+  EEPROM.begin(sizeof(sysSetupStruc) + 1);
+  EEPROM.get(0, sysSetupStruc);
+  
+  // Initialize VFD with saved screen driver settings
+  if (sysSetupStruc.FirstStart == 55) {
+    vfd.begin(sysSetupStruc.screenDriver);
+  } else {
+    vfd.begin(); // Use default on first start
+  }
   vfd.clearDisplay();
    
   delay(200);
   digitalWrite(INV_ENABLE, HIGH); 
-  EEPROM.begin(sizeof(sysSetupStruc) + 1);
-  EEPROM.get(0, sysSetupStruc);
   
   memcpy(customCharData, sysSetupStruc.customCharData, sizeof(customCharData));
 
@@ -406,7 +428,13 @@ void setup()
       // Print current time with timezone
       struct tm timeinfo;
       if (getLocalTime(&timeinfo)) {
-        Serial.println(&timeinfo, "System time with timezone: %H:%M:%S %d.%m.%Y");
+        #ifdef ESP32
+          Serial.println(&timeinfo, "System time with timezone: %H:%M:%S %d.%m.%Y");
+        #else
+          char timeStr[50];
+          strftime(timeStr, sizeof(timeStr), "System time with timezone: %H:%M:%S %d.%m.%Y", &timeinfo);
+          Serial.println(timeStr);
+        #endif
         
         // Update I2C RTC with local time (if available)
         // ESP32 built-in RTC is already set by settimeofday()
@@ -418,9 +446,15 @@ void setup()
         }
       } else {
         Serial.println("Failed to get local time!");
+        setSystemState(STATE_ERROR);
+        delay(2000);  // Show error indication for 2 seconds
+        setSystemState(STATE_NORMAL);
       }
     } else {
       Serial.println("\nInitial NTP sync failed! Will retry in loop.");
+      setSystemState(STATE_ERROR);
+      delay(2000);  // Show error indication for 2 seconds
+      setSystemState(STATE_NORMAL);
     }
   } else {
     Serial.println("NTP disabled (offline mode)");
@@ -513,6 +547,15 @@ void loop()
 {
   esp_task_wdt_reset();
   
+  // For ESP8266, update LED effects in main loop (no FreeRTOS task)
+  #ifdef ESP8266
+    static uint32_t lastLedUpdate = 0;
+    if (millis() - lastLedUpdate >= 20) {  // 50Hz update rate
+      updateLEDEffect();
+      lastLedUpdate = millis();
+    }
+  #endif
+  
   if (millis() - screenUpdateTimer > 500)
   {
     screenUpdateTimer = millis();
@@ -553,7 +596,8 @@ void loop()
           currencyEUR, currencyUSD, currencyBTC
         );
         
-        vfd.blinkState(sysSetupStruc.displayFormatBlink[currentScreenIndex] ? blinkingDot : 0);
+          vfd.blinkState(sysSetupStruc.displayFormatBlink[currentScreenIndex] ? blinkingDot : 0, sysSetupStruc.displayFormatBlink[currentScreenIndex]);
+        
         vfd.writeStringUniverslaChrTab(displayText.c_str(), 0);
       }
     }
@@ -587,7 +631,13 @@ void loop()
         
         // Print formatted time
         if (getLocalTime(&timeinfo)) {
-          Serial.println(&timeinfo, "System time updated: %H:%M:%S %d.%m.%Y");
+          #ifdef ESP32
+            Serial.println(&timeinfo, "System time updated: %H:%M:%S %d.%m.%Y");
+          #else
+            char timeStr[50];
+            strftime(timeStr, sizeof(timeStr), "System time updated: %H:%M:%S %d.%m.%Y", &timeinfo);
+            Serial.println(timeStr);
+          #endif
           
           // Update I2C RTC from system time after NTP sync (if available)
           // ESP32 built-in RTC is updated automatically by settimeofday()
@@ -597,13 +647,15 @@ void loop()
           }
         } else {
           Serial.println("Failed to obtain local time after NTP update");
-          ledIndicateWiFiFailed();
-          delay(2000);  // Show failure indication for 2 seconds
+          setSystemState(STATE_ERROR);
+          delay(2000);  // Show error indication for 2 seconds
+          setSystemState(STATE_NORMAL);
         }
       } else {
         Serial.println("NTP update failed!");
-        ledIndicateWiFiFailed();
+        setSystemState(STATE_ERROR);
         delay(2000);  // Show failure indication for 2 seconds
+        setSystemState(STATE_NORMAL);
       }
     }
   }

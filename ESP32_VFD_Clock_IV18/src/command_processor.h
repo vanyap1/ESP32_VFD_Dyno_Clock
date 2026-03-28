@@ -2,7 +2,11 @@
 #define COMMAND_PROCESSOR_H
 
 #include <Arduino.h>
-#include <WiFi.h>
+#ifdef ESP32
+  #include <WiFi.h>
+#elif defined(ESP8266)
+  #include <ESP8266WiFi.h>
+#endif
 #include "pt63xx.h"
 #include "RV8803.h"
 #include "HDC2010.h"

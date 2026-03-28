@@ -144,7 +144,11 @@ void scanAndStoreNetworks() {
   for (int i = 0; i < n && i < MAX_WIFI_NETWORKS; i++) {
     storedNetworks[i].ssid = WiFi.SSID(i);
     storedNetworks[i].rssi = WiFi.RSSI(i);
-    storedNetworks[i].secure = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    #ifdef ESP32
+      storedNetworks[i].secure = (WiFi.encryptionType(i) != WIFI_AUTH_OPEN);
+    #else
+      storedNetworks[i].secure = (WiFi.encryptionType(i) != AUTH_OPEN);
+    #endif
     storedNetworksCount++;
     
     Serial.print("  ");

@@ -1,7 +1,10 @@
 
 #ifndef INDEX_HTML_H
 #define INDEX_HTML_H
-const char charGen[] = R"rawliteral(
+
+#include <Arduino.h>
+
+const char charGen[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1241,7 +1244,7 @@ const char charGen[] = R"rawliteral(
   )rawliteral";
 
 
-const char index_html[] = R"rawliteral(
+const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -1466,6 +1469,41 @@ const char index_html[] = R"rawliteral(
       <div class="setup-group">
         <h3 class="setup-heading">⚡ Blinking Point</h3>
         <div class="setup-row">
+          <label class="setup-label">Screen Driver:</label>
+          <div class="setup-controls">
+            <select id="screenDriver" class="select-input" onchange="setScreenDriver()">
+              <option value="0">PT6315: 4 digits × 24 segments</option>
+              <option value="1">PT6315: 5 digits × 23 segments</option>
+              <option value="2">PT6315: 6 digits × 22 segments</option>
+              <option value="3">PT6315: 7 digits × 21 segments</option>
+              <option value="4">PT6315: 8 digits × 20 segments</option>
+              <option value="5">PT6315: 9 digits × 19 segments</option>
+              <option value="6">PT6315: 10 digits × 18 segments</option>
+              <option value="7">PT6315: 11 digits × 17 segments</option>
+              <option value="8">PT6315: 12 digits × 16 segments</option>
+              <option value="0">PT6311: 8 digits × 20 segments</option>
+              <option value="8">PT6311: 9 digits × 19 segments</option>
+              <option value="9">PT6311: 10 digits × 18 segments</option>
+              <option value="10">PT6311: 11 digits × 17 segments</option>
+              <option value="11">PT6311: 12 digits × 16 segments</option>
+              <option value="12">PT6311: 13 digits × 15 segments</option>
+              <option value="13">PT6311: 14 digits × 14 segments</option>
+              <option value="14">PT6311: 15 digits × 13 segments</option>
+              <option value="15">PT6311: 16 digits × 12 segments</option>
+              <option value="0">PT6324: 8 digits × 24 segments</option>
+              <option value="8">PT6324: 9 digits × 24 segments</option>
+              <option value="9">PT6324: 10 digits × 24 segments</option>
+              <option value="10">PT6324: 11 digits × 24 segments</option>
+              <option value="11">PT6324: 12 digits × 24 segments</option>
+              <option value="12">PT6324: 13 digits × 24 segments</option>
+              <option value="13">PT6324: 14 digits × 24 segments</option>
+              <option value="14">PT6324: 15 digits × 24 segments</option>
+              <option value="15">PT6324: 16 digits × 24 segments</option>
+            </select>
+            <span class="variable-hint">Display driver configuration</span>
+          </div>
+        </div>
+        <div class="setup-row">
           <label class="setup-label">Segment Mask (HEX):</label>
           <div class="setup-controls">
             <input type="text" id="blinkMask" class="text-input" placeholder="0x000000" value="0x000000" style="width: 150px;">
@@ -1534,6 +1572,35 @@ const char index_html[] = R"rawliteral(
         </table>
 
         <div class="setup-row">
+          <label class="setup-label">My Currency:</label>
+          <div class="setup-controls">
+            <select id="myCurrency" class="select-input">
+              <option value="UAH">UAH - Ukrainian Hryvnia</option>
+              <option value="USD">USD - US Dollar</option>
+              <option value="EUR">EUR - Euro</option>
+              <option value="GBP">GBP - British Pound</option>
+              <option value="PLN">PLN - Polish Zloty</option>
+              <option value="CZK">CZK - Czech Koruna</option>
+              <option value="CHF">CHF - Swiss Franc</option>
+              <option value="JPY">JPY - Japanese Yen</option>
+              <option value="CNY">CNY - Chinese Yuan</option>
+              <option value="AUD">AUD - Australian Dollar</option>
+              <option value="CAD">CAD - Canadian Dollar</option>
+              <option value="SEK">SEK - Swedish Krona</option>
+              <option value="NOK">NOK - Norwegian Krone</option>
+              <option value="DKK">DKK - Danish Krone</option>
+              <option value="TRY">TRY - Turkish Lira</option>
+              <option value="RUB">RUB - Russian Ruble</option>
+              <option value="INR">INR - Indian Rupee</option>
+              <option value="BRL">BRL - Brazilian Real</option>
+              <option value="ZAR">ZAR - South African Rand</option>
+              <option value="MXN">MXN - Mexican Peso</option>
+            </select>
+            <button class="set-button" onclick="setMyCurrency()">SET</button>
+          </div>
+        </div>
+
+        <div class="setup-row">
           <label class="setup-label">Display Brightness:</label>
           <div class="setup-controls">
             <input type="range" id="displayBrightness" class="slider-input" min="0" max="7" value="7">
@@ -1577,6 +1644,7 @@ const char index_html[] = R"rawliteral(
               <option value="wave">Wave</option>
               <option value="chase">Chase</option>
               <option value="twinkle">Twinkle</option>
+              <option value="flicker">Flicker</option>
             </select>
             <button class="set-button" onclick="setLedEffect()">SET</button>
           </div>
@@ -1678,6 +1746,12 @@ const char index_html[] = R"rawliteral(
           <td>OK</td>
         </tr>
         <tr>
+          <td>SCREEN:DRIVER=&lt;0-15&gt; <span class="copy-icon" onclick="copyToInput('SCREEN:DRIVER=8')" title="Copy to input">📋</span></td>
+          <td>Set screen driver mode</td>
+          <td>SCREEN:DRIVER=8</td>
+          <td>OK</td>
+        </tr>
+        <tr>
           <td>DISPLAY:BRIGHTNESS=&lt;0-255&gt; <span class="copy-icon" onclick="copyToInput('DISPLAY:BRIGHTNESS=128')" title="Copy to input">📋</span></td>
           <td>Set display brightness</td>
           <td>DISPLAY:BRIGHTNESS=128</td>
@@ -1711,6 +1785,12 @@ const char index_html[] = R"rawliteral(
           <td>SENSOR:CURRENCY=&lt;0/1&gt; <span class="copy-icon" onclick="copyToInput('SENSOR:CURRENCY=1')" title="Copy to input">📋</span></td>
           <td>Enable/disable currency values</td>
           <td>SENSOR:CURRENCY=1</td>
+          <td>OK</td>
+        </tr>
+        <tr>
+          <td>CURRENCY=&lt;code&gt; <span class="copy-icon" onclick="copyToInput('CURRENCY=UAH')" title="Copy to input">📋</span></td>
+          <td>Set your local currency (UAH, USD, EUR, GBP, etc.)</td>
+          <td>CURRENCY=UAH</td>
           <td>OK</td>
         </tr>
         <tr>
@@ -2000,12 +2080,30 @@ function setBlinkChar() {
   });
 }
 
+function setScreenDriver() {
+  const driver = document.getElementById('screenDriver').value;
+  const cmd = `SCREEN:DRIVER=${driver}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res || 'OK', false);
+  });
+}
+
 // Sensor functions
 function setSensor(type, enabled) {
   const cmd = `SENSOR:${type.toUpperCase()}=${enabled ? 1 : 0}`;
   sendCommand(cmd, (err, res) => {
     if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
     else logToTerminal(cmd, res || 'OK', false);
+  });
+}
+
+function setMyCurrency() {
+  const currency = document.getElementById('myCurrency').value;
+  const cmd = `CURRENCY=${currency}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res, false);
   });
 }
 
@@ -2122,6 +2220,9 @@ function loadSettings() {
       if (settings.blink) {
         document.getElementById('blinkMask').value = settings.blink.mask || '0x000000';
         document.getElementById('blinkPosition').value = settings.blink.position || 0;
+        if (settings.blink.screenDriver !== undefined) {
+          document.getElementById('screenDriver').value = settings.blink.screenDriver;
+        }
       }
       
       // Sensors
@@ -2131,6 +2232,20 @@ function loadSettings() {
         document.getElementById('autoBrightness').checked = settings.sensors.autobrightness || false;
         document.getElementById('weatherApi').checked = settings.sensors.weatherapi || false;
         document.getElementById('currency').checked = settings.sensors.currency || false;
+      }
+      
+      // My Currency
+      if (settings.myCurrency) {
+        const currencySelect = document.getElementById('myCurrency');
+        for (let i = 0; i < currencySelect.options.length; i++) {
+          if (currencySelect.options[i].value === settings.myCurrency) {
+            currencySelect.selectedIndex = i;
+            break;
+          }
+        }
+      } else {
+        // Default to UAH if not set
+        document.getElementById('myCurrency').selectedIndex = 0;
       }
       
       // Display brightness

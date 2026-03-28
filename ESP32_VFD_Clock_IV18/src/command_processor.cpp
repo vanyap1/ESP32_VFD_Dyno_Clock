@@ -4,8 +4,16 @@
 #include "network_utils.h"
 #include <EEPROM.h>
 #include <ArduinoJson.h>
-#include <Update.h>
-#include <esp_task_wdt.h>
+
+// Platform-specific includes
+#ifdef ESP32
+  #include <Update.h>
+  #include <esp_task_wdt.h>
+#elif defined(ESP8266)
+  #include <Updater.h>
+  #define esp_task_wdt_reset() ESP.wdtFeed()
+#endif
+
 #include <NTPClient.h>
 #include <sys/time.h>
 #include <Wire.h>
@@ -211,6 +219,7 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     sprintf(maskStr, "0x%X", sysSetupStruc.blinkMask);
     blink["mask"] = maskStr;
     blink["position"] = sysSetupStruc.blinkPosition;
+    blink["screenDriver"] = sysSetupStruc.screenDriver;
 
     JsonObject sensors = jsonDoc.createNestedObject("sensors");
     sensors["pressure"] = sysSetupStruc.sensorPressure;
@@ -218,6 +227,8 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     sensors["autobrightness"] = sysSetupStruc.sensorAutoBrightness;
     sensors["weatherapi"] = sysSetupStruc.sensorWeatherApi;
     sensors["currency"] = sysSetupStruc.sensorCurrency;
+    
+    jsonDoc["myCurrency"] = sysSetupStruc.myCurrency;
     
     JsonObject display = jsonDoc.createNestedObject("display");
     display["brightness"] = sysSetupStruc.displayBrightness;
@@ -240,86 +251,91 @@ bool processHTTPCommand(WiFiClient& client, String& header,
   }
   
   else if (header.indexOf("POST /cmd=FIRMWARE") >= 0) {
-    Serial.println("Starting OTA firmware update...");
-    
-    int contentLength = 0;
-    int headerStart = header.indexOf("Content-Length: ");
-    if (headerStart != -1) {
-      headerStart += 16; 
-      int headerEnd = header.indexOf('\r', headerStart);
-      if (headerEnd == -1) headerEnd = header.indexOf('\n', headerStart);
-      String lengthStr = header.substring(headerStart, headerEnd);
-      contentLength = lengthStr.toInt();
-    }
-
-    while (client.connected()) {
-      String line = client.readStringUntil('\n');
-      if (line == "\r" || line.length() == 0) break;
-    }
-    
-    Serial.print("Expected firmware size: ");
-    Serial.print(contentLength);
-    Serial.println(" bytes");
-    
-    if (contentLength > 0) {
-      if (!Update.begin(contentLength)) {
-        Serial.println("Not enough space for OTA update");
-        sendErrorResponse(client, 500, "Not enough space");
-      } else {
-        size_t written = 0;
-        uint8_t buffer[4096]; // Increased buffer size for faster OTA
-        
-        while (written < contentLength && client.connected()) {
-          esp_task_wdt_reset(); // Reset watchdog during OTA
-          
-          size_t available = client.available();
-          if (available) {
-            size_t toRead = min(available, sizeof(buffer));
-            size_t bytesRead = client.read(buffer, toRead);
-            
-            if (Update.write(buffer, bytesRead) != bytesRead) {
-              Serial.println("Write error during OTA update");
-              break;
-            }
-            
-            written += bytesRead;
-            
-            if (written % 10240 == 0 || written == contentLength) {
-              Serial.print("Progress: ");
-              Serial.print((written * 100) / contentLength);
-              Serial.println("%");
-            }
-          } else {
-            delay(10); // Increased delay for stability
-          }
-        }
-        
-        if (written == contentLength) {
-          if (Update.end(true)) {
-            Serial.println("OTA update completed successfully");
-            
-            sendOKResponse(client, "Firmware updated successfully. Restarting...");
-            
-            delay(1000);
-            ESP.restart();
-          } else {
-            Serial.print("Update end error: ");
-            Serial.println(Update.errorString());
-            
-            sendHTTPHeader(client, 500, "text/plain");
-            client.print("Update error: ");
-            client.println(Update.errorString());
-          }
-        } else {
-          Serial.println("Incomplete firmware upload");
-          Update.abort();
-          
-          sendErrorResponse(client, 400, "Incomplete firmware data");
-        }
+    #ifdef ESP32
+      Serial.println("Starting OTA firmware update...");
+      
+      int contentLength = 0;
+      int headerStart = header.indexOf("Content-Length: ");
+      if (headerStart != -1) {
+        headerStart += 16; 
+        int headerEnd = header.indexOf('\r', headerStart);
+        if (headerEnd == -1) headerEnd = header.indexOf('\n', headerStart);
+        String lengthStr = header.substring(headerStart, headerEnd);
+        contentLength = lengthStr.toInt();
       }
-    } else {
-      sendErrorResponse(client, 400, "Invalid content length");
-    }
+
+      while (client.connected()) {
+        String line = client.readStringUntil('\n');
+        if (line == "\r" || line.length() == 0) break;
+      }
+      
+      Serial.print("Expected firmware size: ");
+      Serial.print(contentLength);
+      Serial.println(" bytes");
+      
+      if (contentLength > 0) {
+        if (!Update.begin(contentLength)) {
+          Serial.println("Not enough space for OTA update");
+          sendErrorResponse(client, 500, "Not enough space");
+        } else {
+          size_t written = 0;
+          uint8_t buffer[4096]; // Increased buffer size for faster OTA
+          
+          while (written < (size_t)contentLength && client.connected()) {
+            esp_task_wdt_reset(); // Reset watchdog during OTA
+            
+            size_t available = client.available();
+            if (available) {
+              size_t toRead = min(available, sizeof(buffer));
+              size_t bytesRead = client.read(buffer, toRead);
+              
+              if (Update.write(buffer, bytesRead) != bytesRead) {
+                Serial.println("Write error during OTA update");
+                break;
+              }
+              
+              written += bytesRead;
+              
+              if (written % 10240 == 0 || written == (size_t)contentLength) {
+                Serial.print("Progress: ");
+                Serial.print((written * 100) / contentLength);
+                Serial.println("%");
+              }
+            } else {
+              delay(10); // Increased delay for stability
+            }
+          }
+          
+          if (written == (size_t)contentLength) {
+            if (Update.end(true)) {
+              Serial.println("OTA update completed successfully");
+              
+              sendOKResponse(client, "Firmware updated successfully. Restarting...");
+              
+              delay(1000);
+              ESP.restart();
+            } else {
+              Serial.print("Update end error: ");
+              Serial.println(Update.getError());
+              
+              sendHTTPHeader(client, 500, "text/plain");
+              client.print("Update error: ");
+              client.println(Update.getError());
+            }
+          } else {
+            Serial.println("Incomplete firmware upload");
+            
+            sendErrorResponse(client, 400, "Incomplete firmware data");
+          }
+        }
+      } else {
+        sendErrorResponse(client, 400, "Invalid content length");
+      }
+    #else
+      // ESP8266 - OTA not supported via web interface
+      Serial.println("OTA firmware update not supported on ESP8266");
+      sendErrorResponse(client, 501, "OTA update not supported on this controller");
+    #endif
     return true;
   }
   
@@ -448,35 +464,63 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     }
     
     // Calculate content length once
-    size_t contentLength = strlen(index_html);
+    #ifdef ESP8266
+      size_t contentLength = strlen_P(index_html);
+    #else
+      size_t contentLength = strlen(index_html);
+    #endif
     sendHTTPHeaderWithLength(client, 200, "text/html", contentLength);
     
     // Use smaller chunks in offline/AP mode for better mobile device compatibility
-    const char* ptr = index_html;
-    size_t remaining = contentLength;
-    const size_t chunkSize = offlineMode ? 512 : 2048;  // Smaller chunks for AP mode
-    
-    while (remaining > 0 && client.connected()) {
-      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
-      size_t sent = client.write((const uint8_t*)ptr, toSend);
+    #ifdef ESP8266
+      // ESP8266: Read from PROGMEM using a buffer
+      const size_t chunkSize = offlineMode ? 512 : 1024;  // Smaller buffer for ESP8266
+      uint8_t buffer[chunkSize];
+      size_t remaining = contentLength;
+      size_t offset = 0;
       
-      if (sent == 0) {
-        // Write failed, client disconnected
-        Serial.println("Client disconnected during transfer");
-        break;
-      }
-      
-      ptr += sent;
-      remaining -= sent;
-      
-      // Yield to allow WiFi stack to process, more often in AP mode
-      if (remaining > 0) {
-        yield();
-        if (offlineMode) {
-          delay(5);  // Longer delay for AP mode stability
+      while (remaining > 0 && client.connected()) {
+        size_t toRead = (remaining > chunkSize) ? chunkSize : remaining;
+        memcpy_P(buffer, index_html + offset, toRead);
+        size_t sent = client.write(buffer, toRead);
+        
+        if (sent == 0) {
+          Serial.println("Client disconnected during transfer");
+          break;
+        }
+        
+        offset += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(5);
         }
       }
-    }
+    #else
+      // ESP32: Direct pointer access
+      const char* ptr = index_html;
+      size_t remaining = contentLength;
+      const size_t chunkSize = offlineMode ? 512 : 2048;
+      
+      while (remaining > 0 && client.connected()) {
+        size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+        size_t sent = client.write((const uint8_t*)ptr, toSend);
+        
+        if (sent == 0) {
+          Serial.println("Client disconnected during transfer");
+          break;
+        }
+        
+        ptr += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(5);
+        }
+      }
+    #endif
     
     if (remaining == 0) {
       client.flush();
@@ -491,27 +535,56 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       return false;
     }
     
-    size_t contentLength = strlen(charGen);
+    #ifdef ESP8266
+      size_t contentLength = strlen_P(charGen);
+    #else
+      size_t contentLength = strlen(charGen);
+    #endif
     sendHTTPHeaderWithLength(client, 200, "text/html", contentLength);
     
-    const char* ptr = charGen;
-    size_t remaining = contentLength;
-    const size_t chunkSize = offlineMode ? 512 : 2048;
-    
-    while (remaining > 0 && client.connected()) {
-      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
-      size_t sent = client.write((const uint8_t*)ptr, toSend);
+    #ifdef ESP8266
+      // ESP8266: Read from PROGMEM using a buffer
+      const size_t chunkSize = offlineMode ? 512 : 1024;
+      uint8_t buffer[chunkSize];
+      size_t remaining = contentLength;
+      size_t offset = 0;
       
-      if (sent == 0) break;
-      
-      ptr += sent;
-      remaining -= sent;
-      
-      if (remaining > 0) {
-        yield();
-        if (offlineMode) delay(1);
+      while (remaining > 0 && client.connected()) {
+        size_t toRead = (remaining > chunkSize) ? chunkSize : remaining;
+        memcpy_P(buffer, charGen + offset, toRead);
+        size_t sent = client.write(buffer, toRead);
+        
+        if (sent == 0) break;
+        
+        offset += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(1);
+        }
       }
-    }
+    #else
+      // ESP32: Direct pointer access
+      const char* ptr = charGen;
+      size_t remaining = contentLength;
+      const size_t chunkSize = offlineMode ? 512 : 2048;
+      
+      while (remaining > 0 && client.connected()) {
+        size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+        size_t sent = client.write((const uint8_t*)ptr, toSend);
+        
+        if (sent == 0) break;
+        
+        ptr += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(1);
+        }
+      }
+    #endif
     client.flush();
     return true;
   }
@@ -523,27 +596,54 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       return false;
     }
     
-    size_t contentLength = strlen(commonStyles);
+    #ifdef ESP8266
+      size_t contentLength = strlen_P(commonStyles);
+    #else
+      size_t contentLength = strlen(commonStyles);
+    #endif
     sendHTTPHeaderWithLength(client, 200, "text/css", contentLength);
     
-    const char* ptr = commonStyles;
-    size_t remaining = contentLength;
-    const size_t chunkSize = offlineMode ? 512 : 2048;
-    
-    while (remaining > 0 && client.connected()) {
-      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
-      size_t sent = client.write((const uint8_t*)ptr, toSend);
+    #ifdef ESP8266
+      const size_t chunkSize = offlineMode ? 512 : 1024;
+      uint8_t buffer[chunkSize];
+      size_t remaining = contentLength;
+      size_t offset = 0;
       
-      if (sent == 0) break;
-      
-      ptr += sent;
-      remaining -= sent;
-      
-      if (remaining > 0) {
-        yield();
-        if (offlineMode) delay(5);
+      while (remaining > 0 && client.connected()) {
+        size_t toRead = (remaining > chunkSize) ? chunkSize : remaining;
+        memcpy_P(buffer, commonStyles + offset, toRead);
+        size_t sent = client.write(buffer, toRead);
+        
+        if (sent == 0) break;
+        
+        offset += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(5);
+        }
       }
-    }
+    #else
+      const char* ptr = commonStyles;
+      size_t remaining = contentLength;
+      const size_t chunkSize = offlineMode ? 512 : 2048;
+      
+      while (remaining > 0 && client.connected()) {
+        size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+        size_t sent = client.write((const uint8_t*)ptr, toSend);
+        
+        if (sent == 0) break;
+        
+        ptr += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(5);
+        }
+      }
+    #endif
     
     if (remaining == 0) {
       client.flush();
@@ -558,27 +658,54 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       return false;
     }
     
-    size_t contentLength = strlen(commonRest);
+    #ifdef ESP8266
+      size_t contentLength = strlen_P(commonRest);
+    #else
+      size_t contentLength = strlen(commonRest);
+    #endif
     sendHTTPHeaderWithLength(client, 200, "text/javascript", contentLength);
     
-    const char* ptr = commonRest;
-    size_t remaining = contentLength;
-    const size_t chunkSize = offlineMode ? 512 : 2048;
-    
-    while (remaining > 0 && client.connected()) {
-      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
-      size_t sent = client.write((const uint8_t*)ptr, toSend);
+    #ifdef ESP8266
+      const size_t chunkSize = offlineMode ? 512 : 1024;
+      uint8_t buffer[chunkSize];
+      size_t remaining = contentLength;
+      size_t offset = 0;
       
-      if (sent == 0) break;
-      
-      ptr += sent;
-      remaining -= sent;
-      
-      if (remaining > 0) {
-        yield();
-        if (offlineMode) delay(5);
+      while (remaining > 0 && client.connected()) {
+        size_t toRead = (remaining > chunkSize) ? chunkSize : remaining;
+        memcpy_P(buffer, commonRest + offset, toRead);
+        size_t sent = client.write(buffer, toRead);
+        
+        if (sent == 0) break;
+        
+        offset += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(5);
+        }
       }
-    }
+    #else
+      const char* ptr = commonRest;
+      size_t remaining = contentLength;
+      const size_t chunkSize = offlineMode ? 512 : 2048;
+      
+      while (remaining > 0 && client.connected()) {
+        size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+        size_t sent = client.write((const uint8_t*)ptr, toSend);
+        
+        if (sent == 0) break;
+        
+        ptr += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+          if (offlineMode) delay(5);
+        }
+      }
+    #endif
     
     if (remaining == 0) {
       client.flush();
@@ -602,23 +729,45 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     client.println();
     
     // Send favicon in chunks for better stability
-    const uint8_t* ptr = (const uint8_t*)favicon_ico;
-    size_t remaining = sizeof(favicon_ico);
-    const size_t chunkSize = 512;
-    
-    while (remaining > 0 && client.connected()) {
-      size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
-      size_t sent = client.write(ptr, toSend);
+    #ifdef ESP8266
+      const size_t chunkSize = 512;
+      uint8_t buffer[chunkSize];
+      size_t remaining = sizeof(favicon_ico);
+      size_t offset = 0;
       
-      if (sent == 0) break;
-      
-      ptr += sent;
-      remaining -= sent;
-      
-      if (remaining > 0) {
-        yield();
+      while (remaining > 0 && client.connected()) {
+        size_t toRead = (remaining > chunkSize) ? chunkSize : remaining;
+        memcpy_P(buffer, favicon_ico + offset, toRead);
+        size_t sent = client.write(buffer, toRead);
+        
+        if (sent == 0) break;
+        
+        offset += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+        }
       }
-    }
+    #else
+      const uint8_t* ptr = (const uint8_t*)favicon_ico;
+      size_t remaining = sizeof(favicon_ico);
+      const size_t chunkSize = 512;
+      
+      while (remaining > 0 && client.connected()) {
+        size_t toSend = (remaining > chunkSize) ? chunkSize : remaining;
+        size_t sent = client.write(ptr, toSend);
+        
+        if (sent == 0) break;
+        
+        ptr += sent;
+        remaining -= sent;
+        
+        if (remaining > 0) {
+          yield();
+        }
+      }
+    #endif
     
     if (remaining == 0) {
       client.flush();
@@ -1068,6 +1217,27 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     return true;
   }
   
+  else if (header.indexOf("GET /cmd=SCREEN:DRIVER=") >= 0) {
+    int paramStart = header.indexOf("GET /cmd=SCREEN:DRIVER=") + strlen("GET /cmd=SCREEN:DRIVER=");
+    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+    
+    uint8_t driverValue = value.toInt();
+    if (driverValue <= 15) { // Valid range 0-15
+      sysSetupStruc.screenDriver = driverValue;
+      vfd.setScreenDriver(driverValue);
+      EEPROM.put(0, sysSetupStruc);
+      EEPROM.commit();
+      
+      Serial.print("Screen driver set to: ");
+      Serial.println(driverValue);
+      
+      sendOKResponse(client, "Screen driver updated");
+    } else {
+      sendErrorResponse(client, 400, "Invalid driver value");
+    }
+    return true;
+  }
+  
   else if (header.indexOf("GET /cmd=SENSOR:") >= 0) {
     String sensorType = "";
     bool* sensorPtr = nullptr;
@@ -1122,6 +1292,24 @@ bool processHTTPCommand(WiFiClient& client, String& header,
       sendOKResponse(client, response.c_str());
       return true;
     }
+  }
+  
+  else if (header.indexOf("GET /cmd=CURRENCY=") >= 0) {
+    int paramStart = header.indexOf("GET /cmd=CURRENCY=") + strlen("GET /cmd=CURRENCY=");
+    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+    
+    // Copy currency code (max 3 chars + null terminator)
+    strncpy(sysSetupStruc.myCurrency, value.c_str(), 3);
+    sysSetupStruc.myCurrency[3] = '\0';
+    
+    EEPROM.put(0, sysSetupStruc);
+    EEPROM.commit();
+    
+    Serial.print("Currency set to: ");
+    Serial.println(sysSetupStruc.myCurrency);
+    
+    sendOKResponse(client, "Currency updated");
+    return true;
   }
   
   else if (header.indexOf("GET /cmd=LED:") >= 0) {

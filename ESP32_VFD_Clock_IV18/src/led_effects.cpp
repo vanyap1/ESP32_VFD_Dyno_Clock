@@ -10,9 +10,11 @@ static uint32_t ledUpdateTimer = 0;
 static uint8_t ledAnimationPhase = 0;
 static SystemState systemState = STATE_NORMAL;
 
-// FreeRTOS task handle and mutex
-static TaskHandle_t ledTaskHandle = nullptr;
-static SemaphoreHandle_t stateMutex = nullptr;
+// FreeRTOS task handle and mutex (ESP32 only)
+#ifdef ESP32
+  static TaskHandle_t ledTaskHandle = nullptr;
+  static SemaphoreHandle_t stateMutex = nullptr;
+#endif
 
 void initLEDEffects(CRGB* ledsArray, uint8_t numLeds) {
   leds = ledsArray;
@@ -21,35 +23,46 @@ void initLEDEffects(CRGB* ledsArray, uint8_t numLeds) {
   ledAnimationPhase = 0;
   systemState = STATE_NORMAL;
   
-  // Create mutex for thread-safe state access
-  if (stateMutex == nullptr) {
-    stateMutex = xSemaphoreCreateMutex();
-  }
+  // Create mutex for thread-safe state access (ESP32 only)
+  #ifdef ESP32
+    if (stateMutex == nullptr) {
+      stateMutex = xSemaphoreCreateMutex();
+    }
+  #endif
 }
 
 void setSystemState(SystemState state) {
-  if (stateMutex != nullptr) {
-    xSemaphoreTake(stateMutex, portMAX_DELAY);
-    systemState = state;
-    xSemaphoreGive(stateMutex);
-  } else {
-    systemState = state;
-  }
+  #ifdef ESP32
+    if (stateMutex != nullptr) {
+      xSemaphoreTake(stateMutex, portMAX_DELAY);
+      systemState = state;
+      xSemaphoreGive(stateMutex);
+    } else {
+      systemState = state;
+    }
+  #else
+    systemState = state;  // ESP8266 - no mutex needed
+  #endif
 }
 
 SystemState getSystemState() {
   SystemState state;
-  if (stateMutex != nullptr) {
-    xSemaphoreTake(stateMutex, portMAX_DELAY);
-    state = systemState;
-    xSemaphoreGive(stateMutex);
-  } else {
-    state = systemState;
-  }
+  #ifdef ESP32
+    if (stateMutex != nullptr) {
+      xSemaphoreTake(stateMutex, portMAX_DELAY);
+      state = systemState;
+      xSemaphoreGive(stateMutex);
+    } else {
+      state = systemState;
+    }
+  #else
+    state = systemState;  // ESP8266 - no mutex needed
+  #endif
   return state;
 }
 
-// FreeRTOS task for LED animation
+#ifdef ESP32
+// FreeRTOS task for LED animation (ESP32 only)
 void ledAnimationTask(void* parameter) {
   const TickType_t xDelay = pdMS_TO_TICKS(20); // 50Hz update rate
   
@@ -83,6 +96,17 @@ void stopLEDAnimationTask() {
     Serial.println("LED animation task stopped");
   }
 }
+#else
+// ESP8266 stubs - no FreeRTOS tasks
+void startLEDAnimationTask() {
+  // LED animation is updated directly in main loop for ESP8266
+  Serial.println("LED animation will run in main loop (ESP8266)");
+}
+
+void stopLEDAnimationTask() {
+  // Nothing to stop on ESP8266
+}
+#endif
 
 void ledIndicateWiFiConnecting() {
   // Chase effect with color transition for WiFi connecting
@@ -134,7 +158,6 @@ void ledIndicateWiFiFailed() {
   for (int i = 0; i < 4; i++) {
     leds[i] = CRGB(brightness, 0, 0);
   }
-  delay(500); // Short delay to allow pulse to be visible
 }
 
 void ledIndicateAPMode() {
@@ -147,6 +170,34 @@ void ledIndicateAPMode() {
     uint8_t offset = i * 15;
     uint8_t ledBrightness = beatsin8(25, 20, 180, 0, offset);
     leds[i] = CRGB(0, ledBrightness / 4, ledBrightness);
+  }
+}
+void ledIndicateError() {
+  // Smooth breathing effect - all LEDs fade in/out together
+  // Center LEDs (1, 2) fade to full brightness, outer LEDs (0, 3) to half brightness
+  int cycle = ledAnimationPhase % 50; // 1 second cycle at 50Hz
+  
+  // Calculate smooth breathing curve (0-255)
+  uint8_t baseBrightness;
+  if (cycle < 25) {
+    // Fade in (0 to 25)
+    baseBrightness = sin8((cycle * 255) / 25);
+  } else {
+    // Fade out (25 to 50)
+    baseBrightness = sin8(((50 - cycle) * 255) / 25);
+  }
+  
+  for (int i = 0; i < 4; i++) {
+    uint8_t brightness;
+    if (i == 1 || i == 2) {
+      // Center LEDs - full brightness
+      brightness = baseBrightness;
+    } else {
+      // Outer LEDs (0 and 3) - half brightness
+      brightness = baseBrightness / 2;
+    }
+    
+    leds[i] = CRGB(brightness, 0, 0);
   }
 }
 
@@ -210,6 +261,9 @@ void updateLEDEffect() {
         break;
       case STATE_SCANNING:
         ledIndicateScanning();
+        break;
+      case STATE_ERROR:
+        ledIndicateError();
         break;
       default:
         break;
@@ -309,6 +363,25 @@ void updateLEDEffect() {
           for (int i = 0; i < sysSetupStruc.ledCount; i++) {
             leds[i].fadeToBlackBy(16);
           }
+        }
+      }
+      break;
+      
+    case 7: // Flicker - slow random variations
+      {
+        for (int i = 0; i < sysSetupStruc.ledCount; i++) {
+          // Each LED has its own phase offset for asynchronous flickering
+          uint8_t phaseOffset = i * 63; // Different phase for each LED
+          
+          // Slow oscillation using sin8 (±10 brightness variation)
+          int8_t variation = (sin8(ledAnimationPhase * 2 + phaseOffset) - 128) / 6; // -10 to +10
+          
+          // Apply variation to each color channel
+          int16_t r = constrain(sysSetupStruc.ambLightColr[0] + variation, 0, 255);
+          int16_t g = constrain(sysSetupStruc.ambLightColr[1] + variation, 0, 255);
+          int16_t b = constrain(sysSetupStruc.ambLightColr[2] + variation, 0, 255);
+          
+          leds[i] = CRGB(r, g, b);
         }
       }
       break;

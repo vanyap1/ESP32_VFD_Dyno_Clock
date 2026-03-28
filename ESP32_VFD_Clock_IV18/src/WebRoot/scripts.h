@@ -2,7 +2,9 @@
 
 
 // Common REST functions script
-const char commonRest[] = R"rawliteral(
+#include <Arduino.h>
+
+const char commonRest[] PROGMEM = R"rawliteral(
 (function(){
 const d=document,W=window,q=i=>d.getElementById(i),F=(c,cb)=>fetch('/cmd='+c).then(r=>r.text()).then(t=>cb&&cb(null,t)).catch(e=>cb&&cb(e));
 W.sendCommand=W.sendCommand||F;

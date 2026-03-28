@@ -1,4 +1,6 @@
-const char commonStyles[] = R"rawliteral(
+#include <Arduino.h>
+
+const char commonStyles[] PROGMEM = R"rawliteral(
 body { 
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
   margin: 0; 

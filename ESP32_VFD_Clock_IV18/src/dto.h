@@ -34,12 +34,14 @@ typedef struct{
   uint32_t blinkMask;
   uint8_t blinkPosition;
   
+  
   // Sensors
   bool sensorPressure;
   bool sensorTemperature;
   bool sensorAutoBrightness;
   bool sensorWeatherApi;
   bool sensorCurrency;
+  char myCurrency[4];  // Currency code (e.g., "UAH", "USD", "EUR")
   
   // Display
   uint8_t displayBrightness;
@@ -47,6 +49,7 @@ typedef struct{
   // LED
   uint8_t ledCount;
   uint8_t ledEffect;
+  uint8_t screenDriver;  // Screen driver mode (0-15: PT6315/PT6311/PT6324 display configuration)
 }SystemSetup;
 
 
