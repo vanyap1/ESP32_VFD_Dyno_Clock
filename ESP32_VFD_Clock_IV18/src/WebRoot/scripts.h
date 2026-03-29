@@ -1,7 +1,3 @@
-
-
-
-// Common REST functions script
 #include <Arduino.h>
 
 const char commonRest[] PROGMEM = R"rawliteral(

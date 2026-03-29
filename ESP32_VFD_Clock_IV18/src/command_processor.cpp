@@ -5,7 +5,6 @@
 #include <EEPROM.h>
 #include <ArduinoJson.h>
 
-// Platform-specific includes
 #ifdef ESP32
   #include <Update.h>
   #include <esp_task_wdt.h>
@@ -23,7 +22,6 @@
 #include "WebRoot/styles.h"
 #include "WebRoot/images.h"
 
-// External references from main.cpp
 extern SystemSetup sysSetupStruc;
 extern char weatherCond[16];
 extern bool offlineMode;
@@ -40,7 +38,6 @@ extern float currencyEUR;
 extern float currencyUSD;
 extern float currencyBTC;
 
-// HTTP Response Helper Functions
 void sendHTTPHeader(WiFiClient& client, int statusCode, const char* contentType) {
   switch (statusCode) {
     case 200:

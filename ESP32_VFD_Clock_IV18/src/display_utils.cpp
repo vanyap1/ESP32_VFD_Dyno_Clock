@@ -60,11 +60,12 @@ static String formatBtcShort(float value) {
   }
 
   char buffer[16];
-  snprintf(buffer, sizeof(buffer), "%.3f", value / 1000000.0f);
+  snprintf(buffer, sizeof(buffer), "%.3f", value / 1000.0f);
   return String(buffer);
 }
 
-// URL decode function
+
+
 String urlDecode(String str) {
   String decoded = "";
   char temp[] = "0x00";
@@ -87,15 +88,13 @@ String urlDecode(String str) {
   return decoded;
 }
 
-// Parse display format and replace variables
 String parseDisplayFormat(String format, struct tm &timeinfo, 
                          float sensorTemp, int sensorPress, int sensorHum,
                          float weatherTemp, const char* weatherCond,
                          float currencyEUR, float currencyUSD, float currencyBTC) {
   String result = format;
   char buffer[16];
-  
-  // Time
+
   sprintf(buffer, "%02d", timeinfo.tm_hour);
   result.replace("*HH*", buffer);
   
@@ -122,6 +121,7 @@ String parseDisplayFormat(String format, struct tm &timeinfo,
   result.replace("*HUM*", formatIntegerPlaceholder(sensorHum, "--", "%02d"));
   result.replace("*WTEMP*", formatSignedTemperature(weatherTemp));
   result.replace("*WCOND*", (weatherCond != nullptr && weatherCond[0] != '\0') ? weatherCond : "--");
+  // Динамічні формати валют видалені
   result.replace("*EUR*", formatCompactCurrency(currencyEUR));
   result.replace("*USD*", formatCompactCurrency(currencyUSD));
   result.replace("*BTCf*", formatWholeNumber(currencyBTC));

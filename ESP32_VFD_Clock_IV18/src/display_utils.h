@@ -4,10 +4,8 @@
 #include <Arduino.h>
 #include <time.h>
 
-// URL decode function
 String urlDecode(String str);
 
-// Parse display format and replace variables
 String parseDisplayFormat(String format, struct tm &timeinfo, 
                          float sensorTemp, int sensorPress, int sensorHum,
                          float weatherTemp, const char* weatherCond,
