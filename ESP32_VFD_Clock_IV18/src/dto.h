@@ -22,7 +22,7 @@ typedef struct{
   uint8_t screenType;
   uint8_t screenDemoMode;
   uint32_t customCharData[96];
-  uint8_t segmentsBitMask[96];
+  uint8_t segmentsBitMask[96];  // First element: t0=8seg, t1=16seg, t2-t9=reserved; Rest: segment mapping
   
   // Display formats (3 screens as arrays)
   char displayFormat[3][32];
@@ -50,6 +50,7 @@ typedef struct{
   uint8_t ledCount;
   uint8_t ledEffect;
   uint8_t screenDriver;  // Screen driver mode (0-15: PT6315/PT6311/PT6324 display configuration)
+  bool screenDirection;  // false = normal (left to right), true = reversed (right to left)
 }SystemSetup;
 
 

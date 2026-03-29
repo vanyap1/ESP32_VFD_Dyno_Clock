@@ -220,6 +220,7 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     blink["mask"] = maskStr;
     blink["position"] = sysSetupStruc.blinkPosition;
     blink["screenDriver"] = sysSetupStruc.screenDriver;
+    blink["screenDirection"] = sysSetupStruc.screenDirection;
 
     JsonObject sensors = jsonDoc.createNestedObject("sensors");
     sensors["pressure"] = sysSetupStruc.sensorPressure;
@@ -264,11 +265,6 @@ bool processHTTPCommand(WiFiClient& client, String& header,
         contentLength = lengthStr.toInt();
       }
 
-      while (client.connected()) {
-        String line = client.readStringUntil('\n');
-        if (line == "\r" || line.length() == 0) break;
-      }
-      
       Serial.print("Expected firmware size: ");
       Serial.print(contentLength);
       Serial.println(" bytes");
@@ -280,6 +276,7 @@ bool processHTTPCommand(WiFiClient& client, String& header,
         } else {
           size_t written = 0;
           uint8_t buffer[4096]; // Increased buffer size for faster OTA
+          uint32_t lastChunkTime = millis();
           
           while (written < (size_t)contentLength && client.connected()) {
             esp_task_wdt_reset(); // Reset watchdog during OTA
@@ -288,9 +285,11 @@ bool processHTTPCommand(WiFiClient& client, String& header,
             if (available) {
               size_t toRead = min(available, sizeof(buffer));
               size_t bytesRead = client.read(buffer, toRead);
+              lastChunkTime = millis();
               
               if (Update.write(buffer, bytesRead) != bytesRead) {
                 Serial.println("Write error during OTA update");
+                Update.abort();
                 break;
               }
               
@@ -302,17 +301,30 @@ bool processHTTPCommand(WiFiClient& client, String& header,
                 Serial.println("%");
               }
             } else {
-              delay(10); // Increased delay for stability
+              if (millis() - lastChunkTime > 15000) {
+                Serial.println("OTA upload timed out while waiting for data");
+                Update.abort();
+                break;
+              }
+              delay(2);
             }
           }
           
           if (written == (size_t)contentLength) {
             if (Update.end(true)) {
               Serial.println("OTA update completed successfully");
-              
-              sendOKResponse(client, "Firmware updated successfully. Restarting...");
-              
-              delay(1000);
+
+              const char* successMessage = "Firmware updated successfully. Device will reboot now.";
+              sendHTTPHeaderWithLength(client, 200, "text/plain", strlen(successMessage) + 2);
+              client.println(successMessage);
+              client.flush();
+              client.stop();
+
+              screeenUpdateRestricted = true;
+              vfd.clearDisplay();
+              vfd.writeStringUniverslaChrTab("UPDATED", 0);
+
+              delay(1800);
               ESP.restart();
             } else {
               Serial.print("Update end error: ");
@@ -807,7 +819,8 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     sendHTTPHeader(client, 200, "text/plain");
     String dumpData = "";
     if (sysSetupStruc.segmentsBitMask[0] == 0xFF) {
-      dumpData = "x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,x,dp,g,f,e,d,c,b,a";
+      // Default mapping for 8-segment display (PT6315)
+      dumpData = "t0,x,x,x,x,x,x,x,x,x,x,x,x,x,x,a,b,f,g,c,e,d,dp,x,x";
     } else {
       for (int i = 0; i < 96 && sysSetupStruc.segmentsBitMask[i] != '\0'; i++) {
         char byte = (char)sysSetupStruc.segmentsBitMask[i];
@@ -1235,6 +1248,23 @@ bool processHTTPCommand(WiFiClient& client, String& header,
     } else {
       sendErrorResponse(client, 400, "Invalid driver value");
     }
+    return true;
+  }
+  
+  else if (header.indexOf("GET /cmd=SCREEN:DIRECTION=") >= 0) {
+    int paramStart = header.indexOf("GET /cmd=SCREEN:DIRECTION=") + strlen("GET /cmd=SCREEN:DIRECTION=");
+    String value = header.substring(paramStart, header.indexOf(" ", paramStart));
+    
+    bool directionValue = (value.toInt() != 0);
+    sysSetupStruc.screenDirection = directionValue;
+    vfd.setScreenDirection(directionValue);
+    EEPROM.put(0, sysSetupStruc);
+    EEPROM.commit();
+    
+    Serial.print("Screen direction set to: ");
+    Serial.println(directionValue ? "reversed" : "normal");
+    
+    sendOKResponse(client, "Screen direction updated");
     return true;
   }
   

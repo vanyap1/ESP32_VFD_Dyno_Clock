@@ -122,10 +122,10 @@ const char charGen[] PROGMEM = R"rawliteral(
                 
                 
                 <polygon id="0" onclick="s(this,1)" fill="#3D3D3D" points="572.481445 88.6474609 604.673828 123.547852 569.481445 158.540039 376.317383 158.540039 340.5 123.59375 376.317383 88.6474609"></polygon>
-                <text x="491.051063" y="123.59375" text-anchor="middle" fill="green" font-size="40">A1</text>
+                <text x="491.051063" y="123.59375" text-anchor="middle" fill="green" font-size="40">A</text>
                 
                 <polygon id="1" onclick="s(this,2)" fill="#3D3D3D" points="845.481445 88.6474609 880.673828 123.547852 845.481445 158.540039 646.317383 158.540039 610.5 123.59375 646.317383 88.6474609"></polygon>
-                <text x="745.586274" y="123.59375" text-anchor="middle" fill="green" font-size="40">A2</text>
+                <text x="745.586274" y="123.59375" text-anchor="middle" fill="green" font-size="40">A1</text>
 
                 <polygon id="2" onclick="s(this,3)" fill="#3D3D3D" points="883.121094 125.294922 849.228516 159.235352 849.228516 524.225586 883.121094 559.959961 918.039062 524.225586 918.039062 159.235352"></polygon>
                 <text x="883.121094" y="342.627529" text-anchor="middle" fill="green" font-size="40">B</text>
@@ -134,10 +134,10 @@ const char charGen[] PROGMEM = R"rawliteral(
                 <text x="883.121094" y="777.127954" text-anchor="middle" fill="green" font-size="40">C</text>
 
                 <polygon id="4" onclick="s(this,5)" fill="#3D3D3D" points="845.481445 962.647461 880.673828 997.547852 845.481445 1032.54004 646.317383 1032.54004 610.5 997.59375 646.317383 962.647461"></polygon>
-                <text x="745.586274" y="997.59375" text-anchor="middle" fill="green" font-size="40">D1</text>
+                <text x="745.586274" y="997.59375" text-anchor="middle" fill="green" font-size="40">D</text>
 
                 <polygon id="5" onclick="s(this,6)" fill="#3D3D3D" points="572.481445 962.647461 604.673828 997.547852 569.481445 1032.54004 376.317383 1032.54004 340.5 997.59375 376.317383 962.647461"></polygon>
-                <text x="491.051063" y="997.59375" text-anchor="middle" fill="green" font-size="40">D2</text>
+                <text x="491.051063" y="997.59375" text-anchor="middle" fill="green" font-size="40">D1</text>
 
                 <polygon id="6" onclick="s(this,7)" fill="#3D3D3D" points="337.121094 560.294922 303.228516 594.235352 303.228516 959.225586 337.121094 994.959961 372.039062 959.225586 372.039062 594.235352"></polygon>
                 <text x="337.121094" y="777.127954" text-anchor="middle" fill="green" font-size="40">E</text>
@@ -146,10 +146,10 @@ const char charGen[] PROGMEM = R"rawliteral(
                 <text x="337.121094" y="342.627529" text-anchor="middle" fill="green" font-size="40">F</text>
                 
                 <polygon id="8" onclick="s(this,9)" fill="#3D3D3D" points="572.481445 524.647461 604.673828 559.547852 569.481445 594.540039 376.317383 594.540039 340.5 559.59375 376.317383 524.647461"></polygon>
-                <text x="491.051063" y="559.59375" text-anchor="middle" fill="green" font-size="40">G1</text>
+                <text x="491.051063" y="559.59375" text-anchor="middle" fill="green" font-size="40">G</text>
 
                 <polygon id="9" onclick="s(this,10)" fill="#3D3D3D" points="845.481445 524.647461 880.673828 559.547852 845.481445 594.540039 646.317383 594.540039 610.5 559.59375 646.317383 524.647461"></polygon>
-                <text x="745.586274" y="559.59375" text-anchor="middle" fill="green" font-size="40">G2</text>
+                <text x="745.586274" y="559.59375" text-anchor="middle" fill="green" font-size="40">G1</text>
 
                 <polygon id="10" onclick="s(this,11)" fill="#3D3D3D" points="376.382812 166.453125 376.382812 257.988281 550.488281 520.607422 566.919922 520.607422 566.919922 428.955078 392.929688 166.453125"></polygon>
                 <text x="471.651367" y="343.530273" text-anchor="middle" fill="green" font-size="40">H</text>
@@ -217,6 +217,9 @@ const char charGen[] PROGMEM = R"rawliteral(
             <option value="16">16</option>
           </select>
         </span>
+        <button id="setAllBits" style="background: #2a2a2a; color: #00ff99; border: 2px solid #00ff99; padding: 5px 12px; font-size: 18px; cursor: pointer; border-radius: 3px; font-weight: bold;" title="Set All Bits">■</button>
+        <button id="clearAllBits" style="background: #2a2a2a; color: #ff6699; border: 2px solid #ff6699; padding: 5px 12px; font-size: 18px; cursor: pointer; border-radius: 3px; font-weight: bold;" title="Clear All Bits">□</button>
+        <button id="reloadCharTable" style="background: #2a2a2a; color: #ffaa00; border: 2px solid #ffaa00; padding: 5px 12px; font-size: 18px; cursor: pointer; border-radius: 3px; font-weight: bold;" title="Reload Character Table from Device">↻</button>
       </div>
       
       <div id="bitContainer" style="display: flex; flex-wrap: wrap; gap: 5px; justify-content: center;">
@@ -278,16 +281,16 @@ const char charGen[] PROGMEM = R"rawliteral(
           <td>OK</td>
         </tr>
         <tr>
-          <td>SEG=... <span class="copy-icon" onclick="copyToInput('SEG=a,b,c,d,e,f,g,dp')" title="Copy to input">📋</span></td>
-          <td>Save segment mapping</td>
-          <td>SEG=a,b,c,d,e,f,g,dp</td>
+          <td>SEG=... <span class="copy-icon" onclick="copyToInput('SEG=t0,x,x,x,x,x,x,x,x,x,x,x,x,x,x,a,b,f,g,c,e,d,dp,x,x')" title="Copy to input">📋</span></td>
+          <td>Save segment mapping (t0=8seg, t1=16seg)</td>
+          <td>SEG=t0,x,x,...,a,b,f,g,c,e,d,dp</td>
           <td>OK</td>
         </tr>
         <tr>
           <td>SEG? <span class="copy-icon" onclick="copyToInput('SEG?')" title="Copy to input">📋</span></td>
           <td>Get segment mapping</td>
           <td>SEG?</td>
-          <td>a,b,c,d,e,f,g,dp...</td>
+          <td>t0,x,x,...,a,b,c,d,e,f,g,dp</td>
         </tr>
         <tr>
           <td>DUMP? <span class="copy-icon" onclick="copyToInput('DUMP?')" title="Copy to input">📋</span></td>
@@ -481,16 +484,16 @@ const char charGen[] PROGMEM = R"rawliteral(
                     // 16-segment options
                     select.innerHTML = `
                         <option value="">--</option>
+                        <option value="a">A</option>
                         <option value="a1">A1</option>
-                        <option value="a2">A2</option>
                         <option value="b">B</option>
                         <option value="c">C</option>
+                        <option value="d">D</option>
                         <option value="d1">D1</option>
-                        <option value="d2">D2</option>
                         <option value="e">E</option>
                         <option value="f">F</option>
+                        <option value="g">G</option>
                         <option value="g1">G1</option>
-                        <option value="g2">G2</option>
                         <option value="h">H</option>
                         <option value="i">I</option>
                         <option value="j">J</option>
@@ -611,13 +614,14 @@ const char charGen[] PROGMEM = R"rawliteral(
             // Different segment names based on display type
             const segmentNames = currentDisplayType === '7seg' 
                 ? ['a', 'dp', 'c', 'g', 'f', 'b', 'd', 'e']
-                : ['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2', 'h', 'i', 'j', 'k', 'l', 'm', 'dp', 'c1', 'c2'];
+                : ['a', 'a1', 'b', 'c', 'd', 'd1', 'e', 'f', 'g', 'g1', 'h', 'i', 'j', 'k', 'l', 'm', 'dp', 'c1', 'c2'];
             
             // Set bits based on segment mapping and arr state
             for (let i = 0; i < arr.length; i++) {
                 if (arr[i]) {
                     const segmentName = segmentNames[i];
                     const bitNum = segmentMapping[segmentName];
+                    
                     if (bitNum !== undefined) {
                         bitArray[bitNum] = 1;
                     }
@@ -674,6 +678,11 @@ const char charGen[] PROGMEM = R"rawliteral(
             // Add send charset command handler
             document.getElementById('sendCharset').addEventListener('click', sendCharsetCommand);
             
+            // Add set/clear all bits handlers
+            document.getElementById('setAllBits').addEventListener('click', setAllBits);
+            document.getElementById('clearAllBits').addEventListener('click', clearAllBits);
+            document.getElementById('reloadCharTable').addEventListener('click', reloadCharTableFromDevice);
+            
             // Add save segments map handler
             document.getElementById('saveSegmentsMap').addEventListener('click', saveSegmentsMap);
             
@@ -700,8 +709,9 @@ const char charGen[] PROGMEM = R"rawliteral(
                 switchDisplayType();
             });
             
-            // Load segments map from server
+            // Load segments map and character table from server
             loadSegmentsMap();
+            loadCharacterTable();
         });
         
         // Switch between display types
@@ -724,6 +734,10 @@ const char charGen[] PROGMEM = R"rawliteral(
             
             // Regenerate bit display with new segment options
             initBitDisplay();
+            
+            // Reload segments map and character table from device
+            loadSegmentsMap();
+            loadCharacterTable();
             
             // Reset current character pattern
             if (currentEditingChar !== null) {
@@ -891,6 +905,10 @@ const char charGen[] PROGMEM = R"rawliteral(
                 });
                 
                 const result = await response.text();
+
+                if (!response.ok) {
+                  throw new Error(result || `HTTP ${response.status}`);
+                }
                 
                 document.getElementById('firmwareStatus').textContent = `✓ Firmware uploaded: ${result}. Device will restart...`;
                 document.getElementById('firmwareStatus').style.color = '#09ff00';
@@ -914,8 +932,11 @@ const char charGen[] PROGMEM = R"rawliteral(
         
         // Save segments map to device
         async function saveSegmentsMap() {
+            // Add display type as first element: t0 for 7seg, t1 for 16seg, t2-t9 reserved
+            const displayTypeCode = currentDisplayType === '7seg' ? 't0' : 't1';
+            const segments = [displayTypeCode];
+            
             // Collect all select values from bit 23 to bit 0
-            const segments = [];
             for (let i = 23; i >= 0; i--) {
                 const select = document.getElementById(`seg-${i}`);
                 const value = select.value || 'x';
@@ -962,6 +983,19 @@ const char charGen[] PROGMEM = R"rawliteral(
             }
         }
         
+        // Detect display type from segment names
+        function detectDisplayType(segments) {
+            // Check if any segment has 16-segment specific names
+            const seg16Names = ['a1', 'a2', 'd1', 'd2', 'g1', 'g2', 'c1', 'c2', 'h', 'i', 'j', 'k', 'l', 'm'];
+            for (const seg of segments) {
+                const value = seg.trim().toLowerCase();
+                if (seg16Names.includes(value)) {
+                    return '16seg';
+                }
+            }
+            return '7seg';
+        }
+        
         // Load segments map from device
         async function loadSegmentsMap() {
             // Use sendCommand from commonRest.js if available
@@ -972,16 +1006,39 @@ const char charGen[] PROGMEM = R"rawliteral(
                         return;
                     }
                     
-                    // Parse response - expecting format like "a,b,c,--,dp,..."
+                    // Parse response - expecting format like "t0,a,b,c,--,dp,..." or "a,b,c,--,dp,..."
                     const segments = result.trim().split(',');
+                    
+                    // Check if first element is display type (t0, t1, etc.)
+                    let startIndex = 0;
+                    if (segments[0] && segments[0].trim().toLowerCase().startsWith('t')) {
+                        const typeCode = segments[0].trim().toLowerCase();
+                        const detectedType = typeCode === 't0' ? '7seg' : '16seg';
+                        
+                        // Switch display type if different
+                        if (detectedType !== currentDisplayType) {
+                            currentDisplayType = detectedType;
+                            document.getElementById('displayType').value = detectedType;
+                            switchDisplayType();
+                        }
+                        
+                        startIndex = 1; // Skip type indicator
+                    }
                     
                     // Set select values from bit 23 to bit 0
                     for (let i = 23; i >= 0; i--) {
                         const select = document.getElementById(`seg-${i}`);
-                        const index = 23 - i;
+                        const index = startIndex + (23 - i);
                         if (select && segments[index]) {
-                            const value = segments[index].trim();
-                            select.value = value === '--' || value === 'x' ? '' : value;
+                            let value = segments[index].trim().toLowerCase();
+                            
+                            // Handle empty markers
+                            if (value === '--' || value === 'x') {
+                                value = '';
+                            }
+                            
+                            select.value = value;
+                            
                             // Update segment mapping
                             updateSegmentMapping(i, select.value);
                         }
@@ -995,16 +1052,39 @@ const char charGen[] PROGMEM = R"rawliteral(
                     const response = await fetch('/cmd=SEG?');
                     const result = await response.text();
                     
-                    // Parse response - expecting format like "a,b,c,--,dp,..."
+                    // Parse response - expecting format like "t0,a,b,c,--,dp,..." or "a,b,c,--,dp,..."
                     const segments = result.trim().split(',');
+                    
+                    // Check if first element is display type (t0, t1, etc.)
+                    let startIndex = 0;
+                    if (segments[0] && segments[0].trim().toLowerCase().startsWith('t')) {
+                        const typeCode = segments[0].trim().toLowerCase();
+                        const detectedType = typeCode === 't0' ? '7seg' : '16seg';
+                        
+                        // Switch display type if different
+                        if (detectedType !== currentDisplayType) {
+                            currentDisplayType = detectedType;
+                            document.getElementById('displayType').value = detectedType;
+                            switchDisplayType();
+                        }
+                        
+                        startIndex = 1; // Skip type indicator
+                    }
                     
                     // Set select values from bit 23 to bit 0
                     for (let i = 23; i >= 0; i--) {
                         const select = document.getElementById(`seg-${i}`);
-                        const index = 23 - i;
+                        const index = startIndex + (23 - i);
                         if (select && segments[index]) {
-                            const value = segments[index].trim();
-                            select.value = value === '--' || value === 'x' ? '' : value;
+                            let value = segments[index].trim().toLowerCase();
+                            
+                            // Handle empty markers
+                            if (value === '--' || value === 'x') {
+                                value = '';
+                            }
+                            
+                            select.value = value;
+                            
                             // Update segment mapping
                             updateSegmentMapping(i, select.value);
                         }
@@ -1015,6 +1095,146 @@ const char charGen[] PROGMEM = R"rawliteral(
                     console.error('Failed to load segments map:', error);
                 }
             }
+        }
+        
+        // Load character table dump from device
+        async function loadCharacterTable() {
+            try {
+                const response = await fetch('/cmd=DUMP?');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                const arrayBuffer = await response.arrayBuffer();
+                const dataView = new DataView(arrayBuffer);
+                
+                // Parse 96 characters (32-127), each is 4 bytes (uint32 little-endian)
+                for (let i = 0; i < 96; i++) {
+                    const offset = i * 4;
+                    if (offset + 3 < arrayBuffer.byteLength) {
+                        const pattern = dataView.getUint32(offset, true); // true = little-endian
+                        const asciiCode = 32 + i; // ASCII codes 32-127
+                        charPatterns[asciiCode] = pattern;
+                    }
+                }
+                
+                console.log('Character table loaded from device (96 chars)');
+            } catch (error) {
+                console.error('Failed to load character table:', error);
+            }
+        }
+        
+        // Set all bits for current character
+        function setAllBits() {
+            if (currentEditingChar === null) {
+                document.getElementById('commandStatus').textContent = 'Please select a character first!';
+                document.getElementById('commandStatus').style.color = '#ff0000';
+                return;
+            }
+            
+            const maxBits = getMaxSegments();
+            
+            // Set all bits
+            for (let i = 0; i < maxBits; i++) {
+                bitArray[i] = 1;
+                const bitSquare = document.getElementById(`bit-${i}`);
+                if (bitSquare) {
+                    bitSquare.style.background = 'white';
+                    bitSquare.style.color = 'black';
+                }
+            }
+            
+            // Update hex output
+            updateHexOutput();
+            
+            // Update SVG display - set all segments
+            const segmentNames = currentDisplayType === '7seg' 
+                ? ['a', 'dp', 'c', 'g', 'f', 'b', 'd', 'e']
+                : ['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2', 'h', 'i', 'j', 'k', 'l', 'm', 'dp', 'c1', 'c2'];
+                
+            for (let i = 0; i < segmentNames.length; i++) {
+                arr[i] = 1;
+            }
+            
+            const svgContainer = currentDisplayType === '7seg' 
+                ? document.getElementById('svg7seg')
+                : document.getElementById('svg16seg');
+            const numSvgElements = currentDisplayType === '7seg' ? 8 : 19;
+            for (let i = 0; i < numSvgElements; i++) {
+                const polygon = svgContainer.getElementById(String(i));
+                if (polygon) {
+                    polygon.setAttribute("fill", "white");
+                }
+            }
+            
+            document.getElementById('commandStatus').textContent = '✓ All bits set';
+            document.getElementById('commandStatus').style.color = '#09ff00';
+        }
+        
+        // Clear all bits for current character
+        function clearAllBits() {
+            if (currentEditingChar === null) {
+                document.getElementById('commandStatus').textContent = 'Please select a character first!';
+                document.getElementById('commandStatus').style.color = '#ff0000';
+                return;
+            }
+            
+            const maxBits = getMaxSegments();
+            
+            // Clear all bits
+            for (let i = 0; i < maxBits; i++) {
+                bitArray[i] = 0;
+                const bitSquare = document.getElementById(`bit-${i}`);
+                if (bitSquare) {
+                    bitSquare.style.background = '#3D3D3D';
+                    bitSquare.style.color = '#09ff00';
+                }
+            }
+            
+            // Clear arr array
+            const segmentNames = currentDisplayType === '7seg' 
+                ? ['a', 'dp', 'c', 'g', 'f', 'b', 'd', 'e']
+                : ['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2', 'h', 'i', 'j', 'k', 'l', 'm', 'dp', 'c1', 'c2'];
+                
+            for (let i = 0; i < segmentNames.length; i++) {
+                arr[i] = 0;
+            }
+            
+            // Update hex output
+            updateHexOutput();
+            
+            // Clear SVG display
+            const svgContainer = currentDisplayType === '7seg' 
+                ? document.getElementById('svg7seg')
+                : document.getElementById('svg16seg');
+            const numSvgElements = currentDisplayType === '7seg' ? 8 : 19;
+            for (let i = 0; i < numSvgElements; i++) {
+                const polygon = svgContainer.getElementById(String(i));
+                if (polygon) {
+                    polygon.setAttribute("fill", "#3D3D3D");
+                }
+            }
+            
+            document.getElementById('commandStatus').textContent = '✓ All bits cleared';
+            document.getElementById('commandStatus').style.color = '#09ff00';
+        }
+        
+        // Reload character table from device
+        async function reloadCharTableFromDevice() {
+            document.getElementById('commandStatus').textContent = 'Loading character table from device...';
+            document.getElementById('commandStatus').style.color = '#ffaa00';
+            
+            // Reload the character table from device
+            await loadCharacterTable();
+            
+            // If a character is currently being edited, reload its pattern
+            if (currentEditingChar !== null) {
+                loadCharacterPattern(currentEditingChar);
+                document.getElementById('commandStatus').textContent = `✓ Character table reloaded and character '${String.fromCharCode(currentEditingChar)}' restored`;
+            } else {
+                document.getElementById('commandStatus').textContent = '✓ Character table reloaded from device';
+            }
+            document.getElementById('commandStatus').style.color = '#09ff00';
         }
         
         async function sendCharsetCommand() {
@@ -1125,7 +1345,7 @@ const char charGen[] PROGMEM = R"rawliteral(
             // Different segment names based on display type
             const segmentNames = currentDisplayType === '7seg' 
                 ? ['a', 'dp', 'c', 'g', 'f', 'b', 'd', 'e']
-                : ['a1', 'a2', 'b', 'c', 'd1', 'd2', 'e', 'f', 'g1', 'g2', 'h', 'i', 'j', 'k', 'l', 'm', 'dp', 'c1', 'c2'];
+                : ['a', 'a1', 'b', 'c', 'd', 'd1', 'e', 'f', 'g', 'g1', 'h', 'i', 'j', 'k', 'l', 'm', 'dp', 'c1', 'c2'];
             
             // Check each bit in pattern and activate corresponding segment
             for (let bitNum = 0; bitNum < 24; bitNum++) {
@@ -1135,6 +1355,7 @@ const char charGen[] PROGMEM = R"rawliteral(
                     for (let seg in segmentMapping) {
                         if (segmentMapping[seg] === bitNum) {
                             const arrIndex = segmentNames.indexOf(seg);
+                            
                             if (arrIndex >= 0) {
                                 arr[arrIndex] = 1;
                             }
@@ -1147,11 +1368,20 @@ const char charGen[] PROGMEM = R"rawliteral(
             const svgContainer = currentDisplayType === '7seg' 
                 ? document.getElementById('svg7seg')
                 : document.getElementById('svg16seg');
+            
+            // Mapping between SVG polygon id and arr index based on onclick values
+            // For 7-seg: onclick="s(this,N)" means arr[N-1]
+            const svgToArrMap7seg = [0, 5, 2, 6, 7, 4, 3, 1]; // id 0->arr[0], id 1->arr[5], etc.
+            const svgToArrMap16seg = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18];
+            
+            const svgToArrMap = currentDisplayType === '7seg' ? svgToArrMap7seg : svgToArrMap16seg;
             const numSvgElements = currentDisplayType === '7seg' ? 8 : 19;
+            
             for (let i = 0; i < numSvgElements; i++) {
                 const polygon = svgContainer.getElementById(String(i));
                 if (polygon) {
-                    polygon.setAttribute("fill", arr[i] ? "white" : "#3D3D3D");
+                    const arrIndex = svgToArrMap[i];
+                    polygon.setAttribute("fill", arr[arrIndex] ? "white" : "#3D3D3D");
                 }
             }
             
@@ -1459,7 +1689,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           </tr>
           <tr>
             <td class="sensor-description">
-              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTC*</span>
+              <span class="variable-hint">Variables: *HH* *MM* *SS* *DD* *MO* *YY* *YYYY*<br>*TEMP* *PRESS* *HUM* *WTEMP* *WCOND*<br>*EUR* *USD* *BTCf* *BTCs*<br>*BTCf*=2917475 *BTCs*=2.917</span>
             </td>
           </tr>
         </table>
@@ -1518,6 +1748,13 @@ const char index_html[] PROGMEM = R"rawliteral(
             <button class="set-button" onclick="setBlinkChar()">SET</button>
           </div>
         </div>
+        <div class="setup-row">
+          <label class="setup-label">Screen Direction:</label>
+          <div class="setup-controls">
+            <input type="checkbox" id="screenDirection" class="checkbox-input" onchange="setScreenDirection(this.checked)">
+            <span class="variable-hint">Reverse character order (right to left)</span>
+          </div>
+        </div>
       </div>
 
       <!-- Sensor Settings -->
@@ -1566,7 +1803,7 @@ const char index_html[] PROGMEM = R"rawliteral(
               <label class="setup-label">Currency values:</label>
             </td>
             <td class="sensor-description">
-              <span class="variable-hint">Variables: *EUR*, *USD*<br>Exchange rates for EUR and USD<br>in your local currency</span>
+              <span class="variable-hint">Variables: *EUR*, *USD*, *BTCf*, *BTCs*<br>Exchange rates in your local currency<br>*BTCf* full, *BTCs* shortened in millions</span>
             </td>
           </tr>
         </table>
@@ -2089,6 +2326,14 @@ function setScreenDriver() {
   });
 }
 
+function setScreenDirection(reversed) {
+  const cmd = `SCREEN:DIRECTION=${reversed ? 1 : 0}`;
+  sendCommand(cmd, (err, res) => {
+    if (err) logToTerminal(cmd, 'Error: ' + err.message, true);
+    else logToTerminal(cmd, res || 'OK', false);
+  });
+}
+
 // Sensor functions
 function setSensor(type, enabled) {
   const cmd = `SENSOR:${type.toUpperCase()}=${enabled ? 1 : 0}`;
@@ -2222,6 +2467,9 @@ function loadSettings() {
         document.getElementById('blinkPosition').value = settings.blink.position || 0;
         if (settings.blink.screenDriver !== undefined) {
           document.getElementById('screenDriver').value = settings.blink.screenDriver;
+        }
+        if (settings.blink.screenDirection !== undefined) {
+          document.getElementById('screenDirection').checked = settings.blink.screenDirection || false;
         }
       }
       

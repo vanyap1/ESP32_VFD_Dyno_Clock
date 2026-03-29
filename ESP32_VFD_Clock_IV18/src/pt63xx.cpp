@@ -138,7 +138,11 @@ uint8_t IV18_characters[] = {
 
 
 PT63XX::PT63XX(int latchPin, SCREEN_TYPE type)
-  : _latchPin(latchPin), _screenType(type), _screenDriver(DIG12_SEG16) {
+  : _latchPin(latchPin), _screenType(type), _screenDriver(DIG12_SEG16), _maxDigits(12) {
+    // Initialize normal position map
+    for (uint8_t i = 0; i < 16; i++) {
+      _positionMap[i] = i;
+    }
     digitalWrite(_latchPin, HIGH);
     pinMode(_latchPin, OUTPUT);
   }
@@ -183,13 +187,43 @@ void PT63XX::begin() {
 
 void PT63XX::begin(uint8_t screenDriver) {
     _screenDriver = screenDriver;
+    
+    // Calculate max digits based on driver value
+    if (_screenDriver < 8) {
+        _maxDigits = 4 + _screenDriver; // PT6315: 4-11 digits
+    } else {
+        _maxDigits = 1 + _screenDriver; // PT6311/PT6324: 9-16 digits
+    }
+    
     begin();
 }
 
 void PT63XX::setScreenDriver(uint8_t driver) {
     _screenDriver = driver;
+    
+    // Calculate max digits based on driver value
+    if (_screenDriver < 8) {
+        _maxDigits = 4 + _screenDriver; // PT6315: 4-11 digits
+    } else {
+        _maxDigits = 1 + _screenDriver; // PT6311/PT6324: 9-16 digits
+    }
+    
     // Send command to update display mode
     sendCommand(COMMAND_1 | _screenDriver);
+}
+
+void PT63XX::setScreenDirection(bool reversed) {
+    if (reversed) {
+        // Reversed: {15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0}
+        for (uint8_t i = 0; i < _maxDigits; i++) {
+            _positionMap[i] = (_maxDigits - 1) - i;
+        }
+    } else {
+        // Normal: {0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15}
+        for (uint8_t i = 0; i < 16; i++) {
+            _positionMap[i] = i;
+        }
+    }
 }
 
 void PT63XX::setBlinkCharData(uint32_t charMask, uint8_t position){
@@ -233,9 +267,11 @@ void PT63XX::writeChar(uint8_t position, uint8_t character) {
   sendData(&vfd_buff[0], 2); // Send command and data
 }
 void PT63XX::writeRawData(uint8_t position, uint32_t data){
-  if (position >= 12) {
+  if (position >= 16) {
     return; // Invalid position
   }
+  
+  // Apply blink effect to logical position (before mapping)
   if (blinkCharPosition == position && blinkCharEnabled) {
     if (blinkCharState) {
       data = data | blinkCharMask;
@@ -243,8 +279,11 @@ void PT63XX::writeRawData(uint8_t position, uint32_t data){
       data = data & ~blinkCharMask;
     } 
   }
+  
+  // Map position using position map array
+  uint8_t physicalPosition = _positionMap[position];
 
-  vfd_buff[0] = COMMAND_3 + (position*3); // Set address
+  vfd_buff[0] = COMMAND_3 + (physicalPosition*3); // Set address
   vfd_buff[1] = data & 0xFF; // Lower byte
   vfd_buff[2] = (data >> 8) & 0xFF; // Middle byte
   vfd_buff[3] = (data >> 16) & 0xFF; // Upper byte

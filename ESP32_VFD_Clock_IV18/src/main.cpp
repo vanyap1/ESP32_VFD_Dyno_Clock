@@ -5,9 +5,11 @@
 #ifdef ESP32
   #include <WiFi.h>
   #include <WiFiClient.h>
+  #include <WiFiClientSecure.h>
   #include <HTTPClient.h>
 #elif defined(ESP8266)
   #include <ESP8266WiFi.h>
+  #include <WiFiClientSecureBearSSL.h>
   #include <ESP8266HTTPClient.h>
 #endif
 
@@ -22,6 +24,7 @@
 #include "WebRoot/styles.h"
 #include "WebRoot/images.h"
 #include <time.h>
+#include <math.h>
 
 // Platform-specific includes
 #ifdef ESP32
@@ -58,14 +61,14 @@
   // WARNING: Adjust pins according to your hardware!
   // Hardware SPI pins (used by VFD): MOSI=D7, MISO=D6, SCK=D5 - DO NOT USE for other purposes!
   // Hardware I2C pins (used by RTC/sensors): SDA=D2, SCL=D1
-  #define LED_HTTP D0      // GPIO16
-  #define LED_WIFI D3      // GPIO0 (boot pin, has pull-up)
-  #define INV_ENABLE D8    // GPIO15 (boot pin, has pull-down)
+  // #define LED_HTTP D0      // GPIO16 - NOT USED (no hardware connection)
+  // #define LED_WIFI D3      // GPIO0 (boot pin, has pull-up) - NOT USED
+  // #define INV_ENABLE D8    // GPIO15 (boot pin, has pull-down) - NOT USED
   #define LED_STRIP_PIN D4 // GPIO2 (boot pin, has pull-up, built-in LED)
-  #define USR_BTN D3       // GPIO0 (shared with LED_WIFI, boot/flash button)
+  // #define USR_BTN D3       // GPIO0 (shared with LED_WIFI, boot/flash button) - NOT USED
   #define I2C_SDA D2       // GPIO4 (hardware I2C SDA)
   #define I2C_SCL D1       // GPIO5 (hardware I2C SCL)
-  #define VFD_DATA_PIN D0  // GPIO16 (SPI CS/latch pin, shared with LED_HTTP)
+  #define VFD_DATA_PIN D8  // GPIO16 (SPI CS/latch pin)
 #endif
 
 #define LED_STRIP_MAX_NUM_LEDS 16
@@ -99,20 +102,280 @@ const char *ntpServers[] = {"pool.ntp.org", "time.google.com", "time.windows.com
 
 bool screeenUpdateRestricted = false;
 
-float sensorTemp = 0.0;
-int sensorPress = 0;
-int sensorHum = 0;
-float weatherTemp = 0.0;
-float currencyEUR = 0.0;
-float currencyUSD = 0.0;
-float currencyBTC = 0.0;
-char weatherCond[16] = "Cloudy";
+float sensorTemp = NAN;
+int sensorPress = -1;
+int sensorHum = -1;
+float weatherTemp = NAN;
+float currencyEUR = NAN;
+float currencyUSD = NAN;
+float currencyBTC = NAN;
+char weatherCond[16] = "--";
 
 int currentScreenIndex = 0;
 uint32_t screenSwitchTimer = 0;
 
 void updateSensors();
 void syncRTCTime();
+
+static const uint32_t LOCAL_SENSOR_UPDATE_MS = 10000;
+static const uint32_t WEATHER_UPDATE_MS = 15UL * 60UL * 1000UL;
+static const uint32_t CURRENCY_UPDATE_MS = 30UL * 60UL * 1000UL;
+
+bool isInternetAvailable()
+{
+  return !offlineMode && WiFi.status() == WL_CONNECTED;
+}
+
+String getConfiguredCurrencyCode()
+{
+  String currency = sysSetupStruc.myCurrency;
+  currency.trim();
+  currency.toUpperCase();
+
+  if (currency.length() != 3) {
+    currency = "UAH";
+  }
+
+  return currency;
+}
+
+float extractFloatValue(const String& source)
+{
+  String numeric = "";
+  bool started = false;
+  bool hasDecimalPoint = false;
+
+  for (size_t index = 0; index < source.length(); index++) {
+    char current = source.charAt(index);
+
+    if (!started && (current == '+' || current == '-')) {
+      numeric += current;
+      started = true;
+      continue;
+    }
+
+    if (current >= '0' && current <= '9') {
+      numeric += current;
+      started = true;
+      continue;
+    }
+
+    if (started && current == '.' && !hasDecimalPoint) {
+      numeric += current;
+      hasDecimalPoint = true;
+      continue;
+    }
+
+    if (started) {
+      break;
+    }
+  }
+
+  if (numeric.length() == 0 || numeric == "+" || numeric == "-") {
+    return NAN;
+  }
+
+  return numeric.toFloat();
+}
+
+String normalizeWeatherCondition(const String& source)
+{
+  String condition = source;
+  condition.trim();
+  condition.toUpperCase();
+
+  condition.replace("PATCHY RAIN NEARBY", "RAIN NEAR");
+  condition.replace("PARTLY CLOUDY", "P CLOUDY");
+  condition.replace("LIGHT DRIZZLE", "DRIZZLE");
+  condition.replace("LIGHT RAIN", "L RAIN");
+  condition.replace("MODERATE RAIN", "M RAIN");
+  condition.replace("HEAVY RAIN", "H RAIN");
+  condition.replace("THUNDERY OUTBREAKS IN NEARBY", "THUNDER");
+  condition.replace("OVERCAST", "OVRCAST");
+
+  if (condition.length() == 0) {
+    condition = "--";
+  }
+
+  if (condition.length() >= sizeof(weatherCond)) {
+    condition = condition.substring(0, sizeof(weatherCond) - 1);
+  }
+
+  return condition;
+}
+
+bool httpGetText(const String& url, String& response)
+{
+  HTTPClient http;
+  http.setTimeout(5000);
+
+#ifdef ESP32
+  WiFiClientSecure client;
+  client.setInsecure();
+  if (!http.begin(client, url)) {
+    Serial.print("HTTP begin failed: ");
+    Serial.println(url);
+    return false;
+  }
+#else
+  BearSSL::WiFiClientSecure client;
+  client.setInsecure();
+  if (!http.begin(client, url)) {
+    Serial.print("HTTP begin failed: ");
+    Serial.println(url);
+    return false;
+  }
+#endif
+
+  int httpCode = http.GET();
+  if (httpCode <= 0) {
+    Serial.print("HTTP GET failed for ");
+    Serial.print(url);
+    Serial.print(" code=");
+    Serial.println(httpCode);
+    http.end();
+    return false;
+  }
+
+  if (httpCode != HTTP_CODE_OK) {
+    Serial.print("Unexpected HTTP code for ");
+    Serial.print(url);
+    Serial.print(": ");
+    Serial.println(httpCode);
+    http.end();
+    return false;
+  }
+
+  response = http.getString();
+  http.end();
+  return true;
+}
+
+bool fetchWeatherData()
+{
+  String payload;
+  if (!httpGetText("https://wttr.in/?format=%25t|%25C", payload)) {
+    return false;
+  }
+
+  payload.trim();
+  int separatorIndex = payload.indexOf('|');
+  if (separatorIndex < 0) {
+    Serial.println("Weather payload parse error: missing separator");
+    return false;
+  }
+
+  float parsedTemperature = extractFloatValue(payload.substring(0, separatorIndex));
+  if (isnan(parsedTemperature)) {
+    Serial.println("Weather payload parse error: invalid temperature");
+    return false;
+  }
+
+  String parsedCondition = normalizeWeatherCondition(payload.substring(separatorIndex + 1));
+
+  weatherTemp = parsedTemperature;
+  parsedCondition.toCharArray(weatherCond, sizeof(weatherCond));
+
+  Serial.print("Weather updated: ");
+  Serial.print(weatherTemp, 1);
+  Serial.print("C, ");
+  Serial.println(weatherCond);
+
+  return true;
+}
+
+bool fetchBitcoinRate(const String& currencyCode, float usdToLocalRate)
+{
+  String payload;
+  String url = "https://api.coinbase.com/v2/prices/BTC-" + currencyCode + "/spot";
+
+  if (!httpGetText(url, payload) && currencyCode != "USD") {
+    if (!httpGetText("https://api.coinbase.com/v2/prices/BTC-USD/spot", payload)) {
+      return false;
+    }
+
+    DynamicJsonDocument fallbackDoc(512);
+    if (deserializeJson(fallbackDoc, payload) != DeserializationError::Ok) {
+      return false;
+    }
+
+    float btcUsd = String((const char*)(fallbackDoc["data"]["amount"] | "")).toFloat();
+    if (btcUsd <= 0.0f || isnan(btcUsd)) {
+      return false;
+    }
+
+    currencyBTC = btcUsd * usdToLocalRate;
+    return true;
+  }
+
+  DynamicJsonDocument doc(512);
+  if (deserializeJson(doc, payload) != DeserializationError::Ok) {
+    return false;
+  }
+
+  float amount = String((const char*)(doc["data"]["amount"] | "")).toFloat();
+  if (amount <= 0.0f || isnan(amount)) {
+    return false;
+  }
+
+  currencyBTC = amount;
+  return true;
+}
+
+bool fetchCurrencyRates()
+{
+  String currencyCode = getConfiguredCurrencyCode();
+  String payload;
+  if (!httpGetText("https://open.er-api.com/v6/latest/USD", payload)) {
+    return false;
+  }
+
+  DynamicJsonDocument filter(256);
+  filter["result"] = true;
+  JsonObject ratesFilter = filter.createNestedObject("rates");
+  ratesFilter["EUR"] = true;
+  ratesFilter["USD"] = true;
+  ratesFilter[currencyCode] = true;
+
+  DynamicJsonDocument doc(2048);
+  DeserializationError error = deserializeJson(doc, payload, DeserializationOption::Filter(filter));
+  if (error) {
+    Serial.print("Currency JSON parse failed: ");
+    Serial.println(error.c_str());
+    return false;
+  }
+
+  const char* result = doc["result"] | "error";
+  if (strcmp(result, "success") != 0) {
+    Serial.println("Currency API returned non-success status");
+    return false;
+  }
+
+  float usdToLocal = doc["rates"][currencyCode].as<float>();
+  float usdToEur = doc["rates"]["EUR"].as<float>();
+  if (usdToLocal <= 0.0f || usdToEur <= 0.0f) {
+    Serial.println("Currency API returned invalid rates");
+    return false;
+  }
+
+  currencyUSD = usdToLocal;
+  currencyEUR = usdToLocal / usdToEur;
+
+  if (!fetchBitcoinRate(currencyCode, usdToLocal)) {
+    Serial.println("BTC rate update failed, keeping previous BTC value");
+  }
+
+  Serial.print("Currency updated in ");
+  Serial.print(currencyCode);
+  Serial.print(": EUR=");
+  Serial.print(currencyEUR, 2);
+  Serial.print(", USD=");
+  Serial.print(currencyUSD, 2);
+  Serial.print(", BTC=");
+  Serial.println(currencyBTC, 2);
+
+  return true;
+}
 
 void initDefaultConfig()
 {
@@ -141,6 +404,7 @@ void initDefaultConfig()
 
   sysSetupStruc.blinkMask = 0x80;
   sysSetupStruc.blinkPosition = 4;
+  sysSetupStruc.screenDirection = false;  // Normal direction by default
   sysSetupStruc.screenDriver = PT6315_DIG12_SEG16; // Default to PT6315: 12 digits x 16 segments
   
 
@@ -167,11 +431,13 @@ void initDefaultConfig()
 
 void setup()
 {
-  pinMode(LED_HTTP, OUTPUT);
-  pinMode(LED_WIFI, OUTPUT);
-  pinMode(INV_ENABLE, OUTPUT);
-  digitalWrite(INV_ENABLE, LOW); // Enable inverter power
-  pinMode(USR_BTN, INPUT_PULLUP);
+  #ifdef ESP32
+    pinMode(LED_HTTP, OUTPUT);
+    pinMode(LED_WIFI, OUTPUT);
+    pinMode(INV_ENABLE, OUTPUT);
+    digitalWrite(INV_ENABLE, LOW); // Enable inverter power
+    pinMode(USR_BTN, INPUT_PULLUP);
+  #endif
   pinMode(LED_STRIP_PIN, OUTPUT);
   
   // Initialize I2C
@@ -182,30 +448,116 @@ void setup()
   sysSetupStruc.ntpTimeZone = 0;
   
   Serial.begin(115200);
+  delay(100);  // Wait for serial to stabilize
+  
+  Serial.println("\n\n=== VFD Clock Starting ===");
+  Serial.print("SystemSetup structure size: ");
+  Serial.print(sizeof(sysSetupStruc));
+  Serial.println(" bytes");
 
-  for (int i = 0; i < 2; i++)
-  {
-    digitalWrite(LED_WIFI, HIGH);
-    delay(200);
-    digitalWrite(LED_WIFI, LOW);
-    delay(200);
-  }
+  #ifdef ESP32
+    for (int i = 0; i < 2; i++)
+    {
+      digitalWrite(LED_WIFI, HIGH);
+      delay(200);
+      digitalWrite(LED_WIFI, LOW);
+      delay(200);
+    }
+  #endif
   
   // Load EEPROM settings before initializing VFD
-  EEPROM.begin(sizeof(sysSetupStruc) + 1);
+  // ESP8266 needs larger EEPROM size
+  #ifdef ESP8266
+    EEPROM.begin(4096);  // Use maximum EEPROM size for ESP8266
+  #else
+    EEPROM.begin(sizeof(sysSetupStruc) + 1);
+  #endif
+  
   EEPROM.get(0, sysSetupStruc);
   
-  // Initialize VFD with saved screen driver settings
-  if (sysSetupStruc.FirstStart == 55) {
-    vfd.begin(sysSetupStruc.screenDriver);
-  } else {
-    vfd.begin(); // Use default on first start
+  // Validate EEPROM data integrity
+  // Ensure ssid and pass are null-terminated to prevent strlen() overflow
+  sysSetupStruc.ssid[31] = '\0';
+  sysSetupStruc.pass[63] = '\0';
+  
+  // Check if this is first start - do this BEFORE using any fields!
+  #ifdef ESP32
+    if (digitalRead(USR_BTN) == LOW)
+    {
+      sysSetupStruc.FirstStart = 1;  // Force reconfiguration
+    }
+  #endif
+  
+  // Initialize default config if needed (BEFORE using any struct fields!)
+  if (sysSetupStruc.FirstStart != 55)
+  {
+    Serial.println("First start detected. Initializing default configuration...");
+    initDefaultConfig();
+    // Config is now in memory, but also saved to EEPROM in initDefaultConfig()
+    // Reload from EEPROM to ensure consistency
+    EEPROM.get(0, sysSetupStruc);
+    sysSetupStruc.ssid[31] = '\0';
+    sysSetupStruc.pass[63] = '\0';
+    
+    #ifdef ESP32
+      digitalWrite(LED_HTTP, HIGH);
+    #endif
+    vfd.writeStringUniverslaChrTab("Conf", 1);
+    offlineMode = true;
+    setSystemState(STATE_AP_MODE);
+    // Start AP mode immediately for configuration
+    startAPMode();
   }
+  
+  // At this point, struct is guaranteed to have valid data
+  Serial.println("Configuration loaded.");
+  
+  // Additional validation: check if SSID length is reasonable
+  size_t ssidLen = strlen(sysSetupStruc.ssid);
+  size_t passLen = strlen(sysSetupStruc.pass);
+  if (ssidLen > 32 || passLen > 64) {
+    Serial.println("WARNING: String data corrupted, clearing...");
+    memset(sysSetupStruc.ssid, 0, sizeof(sysSetupStruc.ssid));
+    memset(sysSetupStruc.pass, 0, sizeof(sysSetupStruc.pass));
+  }
+  
+  // Validate and clamp values to safe ranges
+  if (sysSetupStruc.ledCount == 0 || sysSetupStruc.ledCount > LED_STRIP_MAX_NUM_LEDS) {
+    Serial.print("WARNING: Invalid LED count (");
+    Serial.print(sysSetupStruc.ledCount);
+    Serial.println("), using default: 4");
+    sysSetupStruc.ledCount = 4;
+  }
+  
+  if (sysSetupStruc.displayBrightness > 7) {
+    Serial.println("WARNING: Invalid display brightness, using default: 1");
+    sysSetupStruc.displayBrightness = 1;
+  }
+  
+  if (sysSetupStruc.ambLightBrightness == 0) {
+    Serial.println("WARNING: Invalid ambient light brightness, using default: 255");
+    sysSetupStruc.ambLightBrightness = 255;
+  }
+  
+  // Validate screen driver (0-15 valid range for PT63xx)
+  if (sysSetupStruc.screenDriver > 15) {
+    Serial.print("WARNING: Invalid screen driver (");
+    Serial.print(sysSetupStruc.screenDriver);
+    Serial.println("), using default: PT6315_DIG12_SEG16");
+    sysSetupStruc.screenDriver = PT6315_DIG12_SEG16;
+  }
+  
+  // Initialize VFD with saved screen driver settings
+  vfd.begin(sysSetupStruc.screenDriver);
+  vfd.setScreenDirection(sysSetupStruc.screenDirection);
   vfd.clearDisplay();
    
   delay(200);
-  digitalWrite(INV_ENABLE, HIGH); 
+  #ifdef ESP32
+    digitalWrite(INV_ENABLE, HIGH);
+  #endif
   
+  // Copy custom char data
   memcpy(customCharData, sysSetupStruc.customCharData, sizeof(customCharData));
 
   // Scan I2C bus for diagnostics
@@ -238,21 +590,7 @@ void setup()
       Serial.println("Not found");
     }
   }
-
-  if (digitalRead(USR_BTN) == LOW)
-  {
-    sysSetupStruc.FirstStart = 1;
-  }
-
-  if (sysSetupStruc.FirstStart != 55)
-  {
-    Serial.println("First start detected. Initializing default configuration...");
-    initDefaultConfig();
-    digitalWrite(LED_HTTP, HIGH);
-    vfd.writeStringUniverslaChrTab("Conf", 1);
-    offlineMode = true;
-    setSystemState(STATE_AP_MODE);
-  }
+  
   FastLED.addLeds<WS2811, LED_STRIP_PIN, GRB>(leds, sysSetupStruc.ledCount).setCorrection( TypicalLEDStrip );
   FastLED.setBrightness(sysSetupStruc.ambLightBrightness);
   
@@ -261,13 +599,8 @@ void setup()
   
   // Start LED animation in separate FreeRTOS task
   startLEDAnimationTask();
-  
-  // If first start, start AP mode immediately
-  if (sysSetupStruc.FirstStart != 55) {
-    startAPMode();
-  }
 
-  vfd.writeStringUniverslaChrTab("HELLO", 1);
+  vfd.writeStringUniverslaChrTab(" HELLO", 0);
   Serial.println("System Setup Data:");
   Serial.print("FirstStart: ");
   Serial.println(sysSetupStruc.FirstStart);
@@ -279,15 +612,17 @@ void setup()
   Serial.println(sysSetupStruc.pass);
   Serial.print("PASS LENGTH:  ");
   Serial.println(strlen(sysSetupStruc.pass));
-  digitalWrite(LED_HTTP, LOW);
+  #ifdef ESP32
+    digitalWrite(LED_HTTP, LOW);
 
-  for (int i = 0; i < 3; i++)
-  {
-    digitalWrite(LED_WIFI, HIGH);
-    delay(200);
-    digitalWrite(LED_WIFI, LOW);
-    delay(200);
-  }
+    for (int i = 0; i < 3; i++)
+    {
+      digitalWrite(LED_WIFI, HIGH);
+      delay(200);
+      digitalWrite(LED_WIFI, LOW);
+      delay(200);
+    }
+  #endif
   Serial.println("Setup complete.");
   
   // Skip WiFi setup if already in offline mode (e.g., FirstStart)
@@ -311,8 +646,10 @@ void setup()
     vfd.writeStringUniverslaChrTab("NO-SSID", 1);
     delay(1000);
     
-    digitalWrite(LED_WIFI, LOW);
-    digitalWrite(LED_HTTP, HIGH);
+    #ifdef ESP32
+      digitalWrite(LED_WIFI, LOW);
+      digitalWrite(LED_HTTP, HIGH);
+    #endif
     offlineMode = true;
     
     setSystemState(STATE_AP_MODE);
@@ -331,7 +668,9 @@ void setup()
     Serial.print("Attempting to connect to: ");
     Serial.println(sysSetupStruc.ssid);
     Serial.println("Connecting to WiFi...");
-    digitalWrite(LED_WIFI, HIGH);
+    #ifdef ESP32
+      digitalWrite(LED_WIFI, HIGH);
+    #endif
 
     // Set LED state to connecting
     setSystemState(STATE_WIFI_CONNECTING);
@@ -352,8 +691,10 @@ void setup()
     if (WiFi.status() != WL_CONNECTED)
     {
       Serial.println("\nWiFi connection failed! Starting AP mode...");
-      digitalWrite(LED_WIFI, LOW);
-      digitalWrite(LED_HTTP, HIGH);
+      #ifdef ESP32
+        digitalWrite(LED_WIFI, LOW);
+        digitalWrite(LED_HTTP, HIGH);
+      #endif
       offlineMode = true;
       
       setSystemState(STATE_AP_MODE);
@@ -380,8 +721,10 @@ void setup()
   }
   }  // End of if (!offlineMode)
   
-  digitalWrite(LED_WIFI, LOW);
-  digitalWrite(LED_HTTP, LOW);
+  #ifdef ESP32
+    digitalWrite(LED_WIFI, LOW);
+    digitalWrite(LED_HTTP, LOW);
+  #endif
   Serial.print("IP Address: ");
   Serial.println(WiFi.localIP());
   serverConfigured.begin();
@@ -495,16 +838,13 @@ bool ntpRequestInProgress = false;
 
 // Update sensor readings
 void updateSensors() {
-  static uint32_t lastSensorUpdate = 0;
-  
-  // Update sensors every 10 seconds
-  if (millis() - lastSensorUpdate < 10000) {
-    return;
-  }
-  lastSensorUpdate = millis();
-  
-  // Read temperature and humidity if sensor is available and enabled
-  if (tempSensorAvailable && sysSetupStruc.sensorTemperature) {
+  static uint32_t lastLocalSensorUpdate = 0;
+  static uint32_t lastWeatherUpdate = 0;
+  static uint32_t lastCurrencyUpdate = 0;
+
+  if (sysSetupStruc.sensorTemperature && tempSensorAvailable &&
+      (lastLocalSensorUpdate == 0 || millis() - lastLocalSensorUpdate >= LOCAL_SENSOR_UPDATE_MS)) {
+    lastLocalSensorUpdate = millis();
     float temp, hum;
     if (tempHumiditySensor.read(temp, hum)) {
       sensorTemp = temp;
@@ -516,6 +856,40 @@ void updateSensors() {
       Serial.print(sensorHum);
       Serial.println("%");
     }
+  } else if (!sysSetupStruc.sensorTemperature) {
+    sensorTemp = NAN;
+    sensorHum = -1;
+  }
+
+  if (!isInternetAvailable()) {
+    return;
+  }
+
+  if (sysSetupStruc.sensorWeatherApi) {
+    if (lastWeatherUpdate == 0 || millis() - lastWeatherUpdate >= WEATHER_UPDATE_MS) {
+      lastWeatherUpdate = millis();
+      if (!fetchWeatherData()) {
+        Serial.println("Weather update skipped due to fetch error");
+      }
+    }
+  } else {
+    lastWeatherUpdate = 0;
+    weatherTemp = NAN;
+    strcpy(weatherCond, "--");
+  }
+
+  if (sysSetupStruc.sensorCurrency) {
+    if (lastCurrencyUpdate == 0 || millis() - lastCurrencyUpdate >= CURRENCY_UPDATE_MS) {
+      lastCurrencyUpdate = millis();
+      if (!fetchCurrencyRates()) {
+        Serial.println("Currency update skipped due to fetch error");
+      }
+    }
+  } else {
+    lastCurrencyUpdate = 0;
+    currencyEUR = NAN;
+    currencyUSD = NAN;
+    currencyBTC = NAN;
   }
 }
 

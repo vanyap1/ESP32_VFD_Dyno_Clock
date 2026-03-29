@@ -99,10 +99,13 @@ class PT63XX {
     void writeString(const char* str, uint8_t position);
     void writeSpecialCharPlase(IV18_SPECIAL_CHARS charName, bool state);
     void setScreenDriver(uint8_t driver);
+    void setScreenDirection(bool reversed);
   private:
     int _latchPin;
     SCREEN_TYPE _screenType;
     uint8_t _screenDriver;
+    uint8_t _maxDigits;
+    uint8_t _positionMap[16];
     //SPI ob
 };
 
